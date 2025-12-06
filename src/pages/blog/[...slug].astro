@@ -2,6 +2,7 @@
 import { getCollection, render } from 'astro:content';
 import Layout from '../../layouts/Layout.astro';
 import { calculateReadingTime, formatReadingTime } from '../../utils/readingTime';
+import Giscus from '../../components/Giscus';
 
 export async function getStaticPaths() {
   const posts = await getCollection('blog');
@@ -21,6 +22,18 @@ const formattedDate = post.data.pubDate.toLocaleDateString('en-US', {
 });
 
 const readingTime = calculateReadingTime(post.body || '');
+
+// Giscus configuration
+// To set up Giscus for your repo:
+// 1. Go to https://giscus.app
+// 2. Enter your GitHub repo (must have Discussions enabled)
+// 3. Copy the repo, repoId, category, and categoryId values
+const giscusConfig = {
+  repo: 'Sneyder2328/tech-blog',
+  repoId: 'R_kgDOQjZMKQ',
+  category: 'Comments',
+  categoryId: 'DIC_kwDOQjZMKc4CzdA0',
+};
 ---
 
 <Layout title={post.data.title} description={post.data.description}>
@@ -63,6 +76,18 @@ const readingTime = calculateReadingTime(post.body || '');
     <article class="prose prose-lg prose-invert max-w-none">
       <Content />
     </article>
+
+    {/* Comments Section */}
+    <Giscus
+      client:visible
+      repo={giscusConfig.repo}
+      repoId={giscusConfig.repoId}
+      category={giscusConfig.category}
+      categoryId={giscusConfig.categoryId}
+      mapping="pathname"
+      reactionsEnabled={true}
+      inputPosition="bottom"
+    />
 
     <footer class="mt-12 border-t border-[var(--color-border)] pt-8">
       <a

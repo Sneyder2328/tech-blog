@@ -5,8 +5,6 @@ pubDate: 2024-12-05
 tags: ["astro", "react", "web-performance", "architecture"]
 ---
 
-import LikeButton from '../../components/LikeButton';
-
 Welcome to my tech blog! In this inaugural post, I'll walk you through the **Island Architecture** pattern that makes Astro such a powerful framework for building high-performance websites.
 
 ## What is Island Architecture?
@@ -18,7 +16,7 @@ Island Architecture is a paradigm where the page is rendered as static HTML, wit
 import Header from '../components/Header';
 
 // An island with client:visible only loads JS when scrolled into view
-<LikeButton client:visible />
+<Counter client:visible />
 ```
 
 ## Why It Matters
@@ -34,11 +32,7 @@ Traditional SPAs ship a massive JavaScript bundle that must be downloaded, parse
 
 Here's a live example of an "island" - a React component with `useState` that only hydrates when you scroll to it:
 
-<div className="not-prose my-8 flex items-center justify-center rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] p-8">
-  <LikeButton client:visible initialLikes={42} />
-</div>
-
-The button above is a **React component** using `client:visible`. It ships zero JavaScript until you scroll it into view. Click it to see the state update!
+The component above would be a **React component** using `client:visible`. It ships zero JavaScript until you scroll it into view!
 
 ## Code Example: Creating an Island
 
@@ -47,7 +41,7 @@ Here's how you embed an interactive React component in an Astro page:
 ```astro
 ---
 // In your .astro file
-import LikeButton from '../components/LikeButton';
+import Counter from '../components/Counter';
 ---
 
 <!-- Static HTML - no JS -->
@@ -56,7 +50,7 @@ import LikeButton from '../components/LikeButton';
   <p>This content is pure HTML.</p>
   
   <!-- This is an "island" - it will hydrate with React -->
-  <LikeButton client:visible initialLikes={10} />
+  <Counter client:visible initialCount={10} />
 </article>
 ```
 
@@ -81,10 +75,4 @@ Astro provides several directives for controlling hydration:
 
 Island Architecture isn't just a performance optimization—it's a fundamentally better mental model for building websites. Ship less JavaScript, make your users happier, and keep the interactivity where it matters.
 
-If you found this helpful, smash that like button below! (Yes, it's another island 🏝️)
-
-<div className="not-prose mt-8 flex items-center gap-4">
-  <LikeButton client:visible />
-  <span className="text-[var(--color-text-muted)]">Thanks for reading!</span>
-</div>
-
+Thanks for reading! 🏝️
