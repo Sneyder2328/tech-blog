@@ -10,18 +10,20 @@ export default function Footer() {
           </p>
           <div className="flex items-center gap-4">
             <a
-              href="/rss.xml"
-              className="text-sm text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-accent)]"
-            >
-              RSS
-            </a>
-            <a
-              href="https://twitter.com"
+              href="https://www.linkedin.com/in/sneyder-angulo/"
               target="_blank"
               rel="noopener noreferrer"
               className="text-sm text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-accent)]"
             >
-              Twitter
+              LinkedIn
+            </a>
+            <a
+              href="https://x.com/sneyderhack"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-accent)]"
+            >
+              X
             </a>
           </div>
         </div>
