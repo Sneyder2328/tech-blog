@@ -6,7 +6,7 @@ export default function Footer() {
       <div className="mx-auto max-w-4xl px-6 py-8">
         <div className="flex flex-col items-center justify-between gap-4 sm:flex-row">
           <p className="text-sm text-[var(--color-text-muted)]">
-            © {currentYear} Tech Blog. Built with Astro & React.
+            © {currentYear} Built By Sneyder Angulo with <a href="https://astro.build" target="_blank" rel="noopener noreferrer" className="text-[var(--color-accent)] transition-colors hover:text-[var(--color-accent-hover)]">Astro</a> & <a href="https://react.dev" target="_blank" rel="noopener noreferrer" className="text-[var(--color-accent)] transition-colors hover:text-[var(--color-accent-hover)]">React</a>.
           </p>
           <div className="flex items-center gap-4">
             <a
