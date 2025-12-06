@@ -1,0 +1,152 @@
+---
+title: "Microservices Anti-Pattern: Why You Should Never Send Files via AMQP"
+description: "A cautionary tale about microservices, message queues, and why moving files through RabbitMQ is a terrible idea."
+pubDate: 2024-11-21
+tags: ["microservices", "rabbitmq", "aws", "nodejs", "architecture"]
+---
+
+Here's another tech horror story from my early microservices days — one that thankfully never reached production, but oh boy… it almost did. 😅
+
+I was working on a high-availability system built with multiple microservices running on different servers. One task seemed simple enough: Service A needs to send a file to Service B. I was new to message brokers (in this case RabbitMQ) and thought: "Queues connect services. So why not just send the file directly through RabbitMQ?"
+
+---
+
+## ❌ The Naive Approach
+
+I wrote some Node.js code that took the file, converted it to a buffer, and sent it directly to the queue, it looked something like this below for the code in Service A:
+
+```javascript
+// Service A (The Producer)
+const amqp = require('amqplib');
+
+async function sendFile(fileBuffer) {
+  const connection = await amqp.connect('amqp://localhost');
+  const channel = await connection.createChannel();
+  const queue = 'file_processing_queue';
+
+  channel.sendToQueue(queue, Buffer.from(fileBuffer));
+  console.log("File sent!");
+}
+```
+
+With small text files? Worked like a charm. With real-world high-res images and PDFs once deployed in staging?
+
+🔥 RabbitMQ exploded, could not handle big files.
+
+---
+
+After some stackoverflowing and digging deeper, here's what I found:
+
+## ❗ Message brokers are NOT meant for large payloads
+
+**1️⃣ RAM Gets Obliterated**
+
+Message brokers are optimized for lots of small messages, not multi-megabyte blobs. One file was enough to exhaust the memory available to the queue.
+
+**2️⃣ Heartbeat Timeouts = Chaos**
+
+When RabbitMQ is too busy pushing a huge payload, it fails to send heartbeats. No heartbeat → broker thinks the consumer died → connection closed → message lost → retry → infinite crash loop.
+
+Basically I turned RabbitMQ into a DDoS attack against itself.
+
+---
+
+## ✅ The Real Solution: The Claim Check Pattern
+
+Once I stopped trying to send giant files through a message queue, the solution became obvious.
+
+As we were already using S3 — BUT Service B didn't have direct access to the bucket (for security purposes). Enter:
+
+**Presigned URLs**
+
+An S3 presigned URL is a temporary link that grants access to a private object in S3. So, for my integration Service A generates it and then Service B can download the file without any AWS credentials.
+
+This is exactly the **Claim Check Pattern**:
+
+1. Don't put the heavy payload in the message.
+2. Put the heavy payload somewhere else (S3).
+3. Put a reference (the "claim check") in the message.
+
+### 🟢 The Correct Flow
+
+1. Service A uploads the file to S3
+2. Service A generates a presigned URL (valid for a limited time)
+3. Service A sends ONLY the URL to RabbitMQ
+4. Service B downloads the file using the URL
+
+Here is what the code would look like on both sides:
+
+```javascript
+// Service A (The Producer)
+const { S3Client, PutObjectCommand, GetObjectCommand } = require("@aws-sdk/client-s3");
+const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
+
+const amqp = require("amqplib");
+
+const s3 = new S3Client({ region: "us-east-1" });
+
+async function sendFileReference(bucket, key, fileBuffer) {
+  // 1. Upload file to S3
+  await s3.send(new PutObjectCommand({
+    Bucket: bucket,
+    Key: key,
+    Body: fileBuffer
+  }));
+
+  // 2. Generate presigned download URL
+  const command = new GetObjectCommand({ Bucket: bucket, Key: key });
+  const signedUrl = await getSignedUrl(s3, command, { expiresIn: 900 }); // 15 min duration
+
+  // 3. Send only the URL to RabbitMQ
+  const connection = await amqp.connect('amqp://localhost');
+  const channel = await connection.createChannel();
+  const queue = "file_url_queue";
+
+  await channel.assertQueue(queue);
+
+  channel.sendToQueue(queue, Buffer.from(signedUrl));
+
+  console.log("Sent presigned URL through RabbitMQ");
+}
+```
+
+```javascript
+// Service B (The Consumer)
+const fs = require('fs');
+const axios = require('axios');
+const amqp = require('amqplib');
+
+async function receiveUrlAndDownload() {
+  const connection = await amqp.connect('amqp://localhost');
+  const channel = await connection.createChannel();
+  const queue = "file_url_queue";
+
+  await channel.assertQueue(queue);
+
+  channel.consume(queue, async msg => {
+    const url = msg.content.toString();
+
+    const response = await axios.get(url, { responseType: 'arraybuffer' });
+
+    const fileName = `downloaded_${Date.now()}`;
+    fs.writeFileSync(fileName, response.data);
+
+    console.log("Downloaded file from S3:", fileName);
+
+    channel.ack(msg);
+  });
+}
+```
+
+### The Result
+
+- RabbitMQ RAM usage: Negligible (messages are just text strings).
+- Reliability: No more missed heartbeats.
+- Security: Service B gets access to the file without needing permanent AWS credentials.
+
+---
+
+## Lesson Learned
+
+If you need to move a mountain… 👉 don't put it inside the message queue. Put it in storage. Send a link. Your queues — and your sanity — will thank you.
+
