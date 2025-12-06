@@ -1,199 +1,148 @@
 ---
 title: "Why Your App is Logging the Wrong IP Address (And How to Fix It)"
-description: "A follow-up to my IP addresses article - discovering why my server logs were full of the same internal IP and how to properly capture client IPs behind proxies and load balancers."
+description: "A quick anecdote about how I was incorrectly handling IP logging in an old Node.js/Express project deployed on Heroku, and the simple fix."
 pubDate: 2024-11-20
-tags: ["networking", "devops", "backend", "security", "debugging"]
+tags: ["nodejs", "expressjs", "heroku", "networking", "webdev"]
 ---
 
-Hey guys, it's me again — back with another story about IP addresses and networking fun. 😄 This time I want to share a debugging adventure that taught me something important about how web traffic actually flows in production.
+Hey guys, it's me again — back with another story about IP addresses and networking stuff. This time I want to share a quick anecdote about how I was incorrectly handling IP logging in one of my old Node.js/Express side projects that I deployed on Heroku (back when they still had a free tier... RIP 🥀).
 
-## The Mystery of the Identical IPs
-
-After writing my last article about finally understanding IP addresses, I felt pretty good about myself. I knew about static vs dynamic IPs, NAT, IPv4 vs IPv6 — the whole deal.
-
-Then I deployed a new feature to production: **rate limiting by IP address**.
-
-The idea was simple: limit each user to 100 API requests per minute based on their IP. Easy, right?
-
-Wrong. 😅
-
-Within hours, I started getting reports that *everyone* was being rate limited. I checked the logs, and my jaw dropped. Every single request was coming from the same IP address:
-
-```
-10.0.0.1 - - [20/Nov/2024:10:15:32] "GET /api/users" 200
-10.0.0.1 - - [20/Nov/2024:10:15:33] "POST /api/orders" 201
-10.0.0.1 - - [20/Nov/2024:10:15:33] "GET /api/products" 200
-10.0.0.1 - - [20/Nov/2024:10:15:34] "GET /api/users" 200
-```
-
-Thousands of requests, all from `10.0.0.1`. That's not a real user — that's a **private IP address**. What was going on?
-
----
-
-## The Culprit: Reverse Proxies and Load Balancers
-
-Here's what I didn't fully understand about modern web architecture: **your application almost never talks directly to the user**.
-
-In most production setups, the traffic flow looks like this:
-
-```
-User (203.0.113.45) 
-    → Load Balancer (AWS ALB)
-        → Reverse Proxy (Nginx)
-            → Your Application
-```
-
-Each hop in this chain establishes a new TCP connection. So when your app calls something like `request.ip` or `request.connection.remoteAddress`, you're not getting the user's IP — you're getting the IP of the **last proxy** that connected to you.
-
-In my case, that was `10.0.0.1` — the internal IP of our Nginx container. 🤦‍♂️
-
----
-
-## The Solution: X-Forwarded-For Header
-
-Thankfully, there's a standard solution. When a proxy forwards a request, it's supposed to add the original client's IP to a special header called `X-Forwarded-For`.
-
-The header accumulates IPs as the request passes through each proxy:
-
-```
-X-Forwarded-For: 203.0.113.45, 70.41.3.18, 10.0.0.1
-```
-
-Reading left to right:
-1. `203.0.113.45` — The original client IP (what you usually want)
-2. `70.41.3.18` — First proxy (maybe a CDN like Cloudflare)
-3. `10.0.0.1` — Last proxy before your app
-
-So the fix is simple: **read the first IP from the `X-Forwarded-For` header** instead of using the connection's remote address.
-
----
-
-## Implementation Examples
-
-Here's how to properly get the client IP in different frameworks:
-
-### Node.js / Express
+So the project had a simple middleware that looked like this:
 
 ```javascript
-function getClientIp(req) {
-  // Check X-Forwarded-For header first
-  const forwarded = req.headers['x-forwarded-for'];
-  if (forwarded) {
-    // Get the first IP in the chain (original client)
-    return forwarded.split(',')[0].trim();
-  }
-  // Fallback to direct connection IP
-  return req.connection.remoteAddress;
-}
-```
+const express = require('express');
+const app = express();
 
-Or use a trusted library like `request-ip`:
-
-```javascript
-import requestIp from 'request-ip';
-
-app.get('/api/data', (req, res) => {
-  const clientIp = requestIp.getClientIp(req);
-  console.log('Client IP:', clientIp);
+app.use((req, res, next) => {
+  console.log('Client IP:', req.socket.remoteAddress);
+  next();
 });
 ```
 
-### Python / Flask
+Pretty straightforward, right?
 
-```python
-from flask import request
+Well… not quite.
 
-def get_client_ip():
-    # Check X-Forwarded-For header
-    if request.headers.get('X-Forwarded-For'):
-        # First IP is the original client
-        return request.headers['X-Forwarded-For'].split(',')[0].strip()
-    return request.remote_addr
-```
-
-### Python / Django
-
-```python
-def get_client_ip(request):
-    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-    if x_forwarded_for:
-        return x_forwarded_for.split(',')[0].strip()
-    return request.META.get('REMOTE_ADDR')
-```
+When I checked the logs, instead of seeing real client IP addresses, all I saw were internal Heroku server IPs. At the time, I had absolutely no idea why.
 
 ---
 
-## ⚠️ Security Warning: Trust, But Verify
+## The "aha!" moment: Heroku uses reverse proxies
 
-Here's the catch: **anyone can send an `X-Forwarded-For` header**.
+What I didn't know back then is that Heroku automatically places your app behind load balancers and reverse proxies.
 
-A malicious user could send a request like:
+Unlike something like a raw AWS EC2 instance — where traffic hits your machine directly — Heroku as most of modern cloud hosting providers intercepts all inbound traffic first.
+
+Here's roughly what I *thought* was happening:
 
 ```
-curl -H "X-Forwarded-For: 1.2.3.4" https://yourapi.com/endpoint
+User → Your Express App
 ```
 
-If you blindly trust this header, they could:
-- Bypass your rate limiting
-- Spoof their location for geo-restricted content
-- Frame someone else for malicious activity
+But here's what *actually* happens:
 
-### The Fix: Configure Trusted Proxies
+```
+User
+  |
+  v
+[ Heroku Load Balancer / Reverse Proxy ]
+  |
+  v
+Your Express App
+```
 
-You need to tell your application which proxies to trust. Only accept `X-Forwarded-For` values that come from your known infrastructure.
+So when Express reads:
 
-**Express.js:**
 ```javascript
-// Trust first proxy (load balancer)
-app.set('trust proxy', 1);
-
-// Or trust specific IPs
-app.set('trust proxy', ['loopback', '10.0.0.0/8']);
+req.socket.remoteAddress
 ```
 
-**Nginx** (set the header correctly):
-```nginx
-location / {
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_pass http://backend;
-}
-```
-
-**AWS ALB** automatically sets `X-Forwarded-For` and you can trust it since it's your infrastructure.
+…it's not showing the user's IP. It's showing Heroku's proxy IP, because that's what is technically connected to your app.
 
 ---
 
-## Other Useful Headers
+## How reverse proxies preserve the real client IP
 
-While we're at it, here are other headers proxies commonly set:
+Reverse proxies work like middlemen. They accept the incoming request, open a separate connection to your server, and then forward everything along.
 
-| Header | Purpose |
-|--------|---------|
-| `X-Forwarded-For` | Chain of client and proxy IPs |
-| `X-Real-IP` | Single original client IP (Nginx) |
-| `X-Forwarded-Proto` | Original protocol (http/https) |
-| `X-Forwarded-Host` | Original host header |
-| `CF-Connecting-IP` | Client IP (Cloudflare specific) |
-| `True-Client-IP` | Client IP (Akamai/Cloudflare) |
+To make sure the origin server (your app) still knows the real user IP, proxies add a special header:
+
+```
+X-Forwarded-For: <real client IP>
+```
+
+So the request flow looks like this:
+
+```
+User IP 203.0.113.42
+     |
+     | (User connects)
+     v
+Heroku Proxy
+     |
+     |  Adds header: X-Forwarded-For: 203.0.113.42
+     v
+Your Express App
+```
+
+Once I understood that, the fix became easy.
 
 ---
 
-## Lessons Learned
+## Two ways to fix it in Express
 
-1. **Your app is rarely the first point of contact** — There's almost always a proxy, load balancer, or CDN in front of it.
+### Option 1: Tell Express to trust the proxy
 
-2. **`request.ip` lies** — It gives you the last hop, not the original client.
+When you enable this, Express automatically uses `X-Forwarded-For` for `req.ip`.
 
-3. **Headers can be spoofed** — Always configure trusted proxies in production.
+```javascript
+const express = require('express');
+const app = express();
 
-4. **Test with real infrastructure** — This bug never showed up in local development because there was no proxy in the way.
+app.set('trust proxy', true);
 
-After fixing my code to properly read `X-Forwarded-For`, the rate limiting worked perfectly. Different users got their own limits, and my logs finally showed real, diverse IP addresses from around the world.
+app.use((req, res, next) => {
+  console.log('Client IP:', req.ip);
+  next();
+});
+```
 
-Another networking lesson learned the hard way! 🌐
+This is the recommended approach for Heroku, Render, Vercel, etc.
+
+---
+
+### Option 2: Read the header manually
+
+If you prefer to handle it yourself:
+
+```javascript
+const express = require('express');
+const app = express();
+
+app.use((req, res, next) => {
+  console.log('Client IP:', req.headers['x-forwarded-for']);
+  next();
+});
+```
+
+Just note that the header can contain a comma-separated list if multiple proxies are in the chain. Usually, the first entry is the real client.
+
+---
+
+## The takeaway
+
+If your Node/Express app runs behind any cloud hosting, CDN, load balancer, or reverse proxy (Heroku, Vercel, Netlify, AWS ELB, Cloudflare, Nginx, etc.), remember:
+
+| What you're using | What you get |
+|-------------------|--------------|
+| `req.socket.remoteAddress` | ❌ Proxy's IP (useless) |
+| `req.ip` with `trust proxy` | ✅ Real client IP |
+| `req.headers['x-forwarded-for']` | ✅ Real client IP (manual) |
+
+**Bottom line:** Always check how your hosting platform handles incoming traffic. Most modern providers use reverse proxies, which means you'll need to configure your app to read the `X-Forwarded-For` header — either automatically via `trust proxy` or manually.
+
+This is one of those things you learn after staring at logs wondering why every single user of your app seems to live inside your hosting provider's data center. 😅
 
 ---
 
 *This is a follow-up to my previous article: [I've Been a Developer for over 8 Years, and I Just Actually Understood IP Addresses](/blog/understanding-ip-addresses)*
-
