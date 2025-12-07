@@ -18,6 +18,14 @@ export default function Footer() {
               LinkedIn
             </a>
             <a
+              href="https://medium.com/@sneyderangulo"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-accent)]"
+            >
+              Medium
+            </a>
+            <a
               href="https://x.com/sneyderhack"
               target="_blank"
               rel="noopener noreferrer"
