@@ -31,7 +31,7 @@ export default function Header({ siteName = 'Sneyder\'s Chronicles' }: HeaderPro
           </li>
           <li>
             <a
-              href="https://github.com"
+              href="https://github.com/Sneyder2328"
               target="_blank"
               rel="noopener noreferrer"
               className="text-[var(--color-text-muted)] transition-colors hover:text-white"
