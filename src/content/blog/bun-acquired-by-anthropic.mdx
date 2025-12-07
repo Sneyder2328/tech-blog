@@ -1,0 +1,75 @@
+---
+title: "Bun Got Acquired by Anthropic: Here is Why It Matters"
+description: "Bun was acquired by Anthropic. But what is Bun, anyway? Here's why an AI company would buy a JavaScript runtime, and what it means for the future of AI tooling."
+pubDate: 2024-12-07
+tags: ["javascript", "bun", "anthropic", "ai", "tooling", "typescript"]
+---
+
+**Bun was acquired a few days ago by Anthropic.**
+
+But what *is* Bun, anyway?
+
+If you are already deeply knowledgeable about the Bun ecosystem, this article might not be for you. But if you have been hearing the hype and wondering why an AI company would buy a JavaScript runtime, read on.
+
+## The All-in-One Toolkit
+
+Bun is a modern, high-performance JavaScript toolkit written in Zig. Unlike Node.js, which is primarily a runtime plus standard library, Bun aims to be a cohesive all-in-one solution. It includes:
+
+* **Runtime:** Runs JavaScript and TypeScript files.
+* **Package Manager:** A very fast alternative to npm, pnpm, and yarn.
+* **Bundler:** A native bundler built-in (think Webpack or Vite, but zero-config).
+* **Test Runner:** A Jest-compatible test runner built right in.
+
+Bun v0.1.0 launched in 2022 explicitly as:
+
+> "a bundler, a transpiler, a runtime (designed to be a drop-in replacement for Node.js), test runner, and a package manager – all in one."
+
+The "drop-in replacement" piece is key. Bun's roadmap has consistently focused on Node.js compatibility so that in practice you can point many existing Node projects at Bun with minimal changes. It's not perfect yet as some native addons and edge-case Node APIs still need work — but compatibility is a core priority, not an afterthought.
+
+## TypeScript as a First-Class Citizen
+
+One of the most notable advantages of Bun is how it handles TypeScript.
+
+In the Node world, you typically need a build step (using `tsc`) or a loader (like `ts-node`) to run TypeScript. Bun treats `.ts` files as first‑class citizens. It includes a very efficient native transpiler in the runtime, so you can run `bun index.ts` directly with no separate build step or extra tooling required.
+
+## Why is Bun So Efficient?
+
+Bun isn't "Node but newer." It makes two major architectural bets.
+
+### 1. The Engine Selection
+
+Bun uses JavaScriptCore (JSC), the engine developed by Apple for Safari, instead of Google's V8 (used by Node.js). JSC has historically shown strong startup performance and competitive memory usage, which can benefit short‑lived scripts and CLI tools.
+
+### 2. Native Code, Fewer Bridges
+
+Bun leans extremely heavily on native Zig code.
+
+Node.js, by contrast, has:
+
+* A core implemented in C/C++, libuv, OpenSSL, etc.
+* A large chunk of the standard library implemented in JavaScript on top of those native parts.
+
+That structure means many Node APIs involve calls that cross the boundary between JavaScript and native code through a binding layer. Those crossings add some overhead.
+
+Bun minimizes this overhead by implementing far more of its behavior directly in optimized native Zig and keeping the runtime, bundler, package manager, and test runner tightly integrated.
+
+The result: fewer layers, fewer context switches, and less glue code between your script and the underlying system.
+
+---
+
+## Why Anthropic Wants Bun
+
+So, why would the makers of Claude acquire a JavaScript runtime?
+
+While Bun runs HTTP servers very quickly, its architectural choices make it particularly well‑suited to short‑lived processes, where fast startup and low overhead matter. Because JavaScriptCore boots up almost instantly, Bun eliminates the "cold start" lag that plagues Node.js.
+
+This is critical for **CLI Tools**, specifically **Claude Code**.
+
+Claude Code isn't just a chatbot; it is an agent that lives in your terminal. It explores file systems, installs dependencies, runs tests, and executes commands. For an AI agent to feel "smart," it needs to be fast.
+
+If Claude needs to run `ls`, then read a file, then run a test, and the runtime takes 200ms just to wake up for each step, the AI feels sluggish.
+
+**Bun eliminates that latency.**
+
+By acquiring Bun, Anthropic secures the infrastructure to run AI "Tool Use" at native speeds. It allows the AI to generate and execute TypeScript fixes on the fly without configuring build tools, making the agent feel like it is working at the speed of thought, rather than the speed of a legacy JavaScript bridge.
+
