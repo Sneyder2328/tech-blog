@@ -2,7 +2,7 @@ interface HeaderProps {
   siteName?: string;
 }
 
-export default function Header({ siteName = 'Sneyder\'s Chronicles' }: HeaderProps) {
+export default function Header({ siteName = 'Sneyder\'s Notes' }: HeaderProps) {
   return (
     <header className="border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
       <nav className="mx-auto flex max-w-4xl items-center justify-between px-6 py-4">
