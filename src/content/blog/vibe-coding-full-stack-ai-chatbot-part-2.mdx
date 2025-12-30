@@ -1,0 +1,141 @@
+---
+title: "Vibe Coding a Full-Stack AI Chatbot Platform (Part 2): Tech Stack & Tooling Choices"
+description: "In this part, we walk through the technology choices for our AI chatbot project."
+pubDate: 2025-12-30
+tags: ["tutorial", "ai", "chatbot", "llm", "full-stack", "cursor", "typescript", "react", "nestjs", "trpc", "prisma", "postgresql"]
+heroImage: "/images/vibe-coding-full-stack-ai-chatbot-part-1-hero-image.jpg"
+---
+
+In this part, I want to be explicit about the tech stack behind the chatbot project. Not just what I’m choosing, but why those choices make sense for this specific product.
+
+## Architecture Overview
+
+I'm going with a classic **client-server architecture** with communication powered by **tRPC**. Simple, battle-tested, and perfectly suited for our needs.
+
+```
+┌─────────────┐      tRPC      ┌─────────────┐
+│   React     │ ◄────────────► │   NestJS    │
+│   (Vite)    │                │   Server    │
+└─────────────┘                └──────┬──────┘
+                                      │
+                                      ▼
+                               ┌─────────────┐
+                               │  PostgreSQL │
+                               │  (Prisma)   │
+                               └─────────────┘
+```
+
+## The Client: React + Vite + TanStack Router
+
+On the frontend, I'm keeping things straightforward: **React** as the UI layer, **Vite** for fast dev builds and simple configuration, **TanStack Router** for type-safe routing, and **Tailwind CSS** for styling. This should give us a modern client without dragging backend concerns into the frontend framework.
+
+### Why Not Next.js?
+
+If I let an LLM pick the stack, it would almost certainly recommend Next.js. Which kinda makes sense since it has a huge ecosystem, great docs, and for many teams it’s the default choice for React apps in 2025.
+
+But I don’t think this project really needs it.
+
+This chatbot doesn’t require server-side rendering, React Server Components, edge functions, or server actions.
+
+What it does need is a clean separation between client and server, where the server handles authentication, database connection pooling, background jobs (cron tasks), and http streaming for real-time chat.
+
+A dedicated NestJS server handles all of this more elegantly than trying to put it all into Next.js API routes.
+
+## The Server: NestJS
+
+[NestJS](https://nestjs.com/) is a Node.js framework that brings structure to backend development. If you’ve built backends in Java, especially with Spring Boot, a lot of it will feel familiar: decorators that read like annotations, dependency injection, and a module-first structure that keeps things organized as the codebase grows.
+
+I used to be an Android Java dev back in the day, and I still prefer codebases with clear boundaries. NestJS is TypeScript-first, scales nicely as you add features, and it gives you solid primitives for cross-cutting concerns (guards, interceptors, middleware) without fighting the framework.
+
+```typescript
+@Controller('chat')
+export class ChatController {
+  @Post()
+  @UseGuards(AuthGuard)
+  async createMessage(@Body() dto: CreateMessageDto) {
+    // Clean, declarative, type-safe
+  }
+}
+```
+
+## The ORM: Prisma
+
+For database access, I'm using **Prisma** over the newer Drizzle ORM.
+
+This was a tough call. Drizzle has been getting a lot of hype for its performance and SQL-like syntax, and I do like its approach. But for this project I’m choosing the more battle-tested option: Prisma has more real-world edge cases documented, the day-to-day DX is hard to beat, and the schema + migrations workflow is consistently reliable. In practice, query design and indexing matter far more than small ORM overhead differences.
+
+For a project where database interactions are critical, I’d rather bet on the safer, more mature option.
+
+## The Database: PostgreSQL
+
+I picked **PostgreSQL** mostly for an unglamorous reason: it feels like the default relational database these days. If you ask ten developers what to use for a new product, a lot of them will say Postgres without thinking too hard, and there’s value in following that gravity.
+
+MySQL used to be the obvious default, but it feels less community-driven since the Oracle acquisition. And while open source alternatives like MariaDB are solid, I’m not convinced they get the same level of long-term ecosystem support and maintenance as Postgres across the managed hosting providers, libraries, and tooling I want to rely on.
+
+Technically, Postgres also fits this project really well. It behaves great under concurrency, it’s strict about data integrity, and it has a deep feature set you end up appreciating as the product grows. JSONB is genuinely useful when you’re building AI products (metadata, model configs, tool call traces, provider payloads). And importantly for what I want to build next, Postgres has strong extension support for vectors, so we can store and query embeddings (for example with `pgvector`) when we add semantic search, retrieval, and similar features later on.
+
+## The Communication Layer: tRPC
+
+This is the most important architectural decision, so let me explain it properly.
+
+### What is tRPC?
+
+tRPC stands for **TypeScript Remote Procedure Call**. Instead of defining REST endpoints with URLs and HTTP methods, you define *procedures*: functions that can be called from the client as if they were local. The big win is end-to-end type safety across the boundary.
+
+Here's a simplified example:
+
+**Server (NestJS):**
+
+```typescript
+export const appRouter = router({
+  chat: router({
+    sendMessage: publicProcedure
+      .input(z.object({ content: z.string() }))
+      .mutation(async ({ input }) => {
+        // Save to DB, call AI, etc.
+        return { id: '123', content: input.content };
+      }),
+  }),
+});
+
+export type AppRouter = typeof appRouter;
+```
+
+**Client (React):**
+
+```typescript
+// Full autocompletion and type safety!
+const mutation = trpc.chat.sendMessage.useMutation();
+
+mutation.mutate({ content: 'Hello AI!' });
+// TypeScript knows the response shape automatically
+```
+
+### Why Not REST + OpenAPI?
+
+In past projects, I've built REST APIs with Swagger decorators and used code generators like **Orval** to create typed clients. It works, but it comes with a few annoyances: Swagger docs can drift out of sync with real types, you add an extra generation step to your workflow, and you can still end up with runtime mismatches when the backend changes and the client hasn’t been regenerated yet.
+
+With tRPC in a monorepo, types flow directly from server to client. Change a procedure’s return type and your frontend will complain immediately, which keeps types in sync during refactors and speeds up iteration. It’s also a nice fit when you’re iterating quickly with AI-assisted coding, because type drift shows up instantly.
+
+### A Note on Performance
+
+One thing to be aware of: tRPC's type inference can slow down TypeScript in large projects. And realistically, a chatbot backend can easily grow into dozens of procedures as you add chat, users, billing, admin tools, analytics, and integrations.
+
+If TypeScript starts to feel sluggish, there are a few practical ways to keep it under control: keep routers modular (split by domain instead of one giant router), avoid importing inference-heavy types everywhere, and consider exporting thinner types (for example `RouterInputs`/`RouterOutputs`) or consuming prebuilt `.d.ts` types from the server package so the client isn't constantly re-inferring everything.
+
+## Summary
+
+| Layer | Choice | Why |
+|-------|--------|-----|
+| Frontend | React + Vite | Fast builds, simple config |
+| Routing | TanStack Router | Type-safe, modern |
+| Styling | Tailwind CSS | Utility-first, rapid development |
+| Backend | NestJS | Structure, TypeScript, scalability |
+| ORM | Prisma | Mature, reliable, great DX |
+| API Layer | tRPC | End-to-end type safety |
+| Database | PostgreSQL | Strong default, reliable ecosystem, great feature set |
+
+---
+
+In **Part 3**, we'll set up the monorepo structure and get our development environment running. See you there!
+
