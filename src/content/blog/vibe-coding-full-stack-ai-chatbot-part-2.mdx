@@ -1,8 +1,8 @@
 ---
 title: "Vibe Coding a Full-Stack AI Chatbot Platform (Part 2): Tech Stack & Tooling Choices"
 description: "In this part, we walk through the technology choices for our AI chatbot project."
-pubDate: 2025-12-30
-tags: ["tutorial", "ai", "chatbot", "llm", "full-stack", "cursor", "typescript", "react", "nestjs", "trpc", "prisma", "postgresql"]
+pubDate: 2026-01-01
+tags: ["tutorial", "ai", "chatbot", "llm", "full-stack", "cursor", "typescript", "react", "nestjs", "trpc", "prisma", "postgresql", "better-auth", "biome"]
 heroImage: "/images/vibe-coding-full-stack-ai-chatbot-part-1-hero-image.jpg"
 ---
 
@@ -74,17 +74,25 @@ MySQL used to be the obvious default, but it feels less community-driven since t
 
 Technically, Postgres also fits this project really well. It behaves great under concurrency, it’s strict about data integrity, and it has a deep feature set you end up appreciating as the product grows. JSONB is genuinely useful when you’re building AI products (metadata, model configs, tool call traces, provider payloads). And importantly for what I want to build next, Postgres has strong extension support for vectors, so we can store and query embeddings (for example with `pgvector`) when we add semantic search, retrieval, and similar features later on.
 
+## Authentication: Better Auth
+
+I remember the good old days when we had to set up auth from scratch: create a sessions table, handle password hashing with bcrypt (plus some salt and maybe some pepper), manage JWTs, refresh tokens, email validation, OTP, forgot password flows... and then repeat that custom system for every new project.
+
+In more recent years, after the surge of Next.js, a library called **NextAuth** (now Auth.js) became the de facto standard for authentication in the Next.js ecosystem. But since we're not using Next.js, we need something more flexible.
+
+Enter [Better Auth](https://www.better-auth.com/).
+
+Better Auth has been growing rapidly in popularity, and for good reason. It's **framework-agnostic**, **type-safe**, and designed with modern patterns in mind. It's also maintained by the same guys currently behind NextAuth itself, which gives me confidence in its long-term viability.
+
+For our stack, Better Auth fits nicely:
+
+- **Server-side (NestJS):** We wire it up with a direct connection to our Postgres database via Prisma. It handles session management, password hashing, and token generation out of the box.
+- **Client-side (React):** The React integration works seamlessly, and it uses **HTTP-only cookies** for session storage by default, which is ideal for web apps as it prevents CSRF attacks.
+
+So no more reinventing the wheel for every project. Authentication is one of those things where using a battle-tested library is almost always the right call. Other options worth mentioning include **Keycloak**, which is a bit overkill for this project, and **Firebase Auth**, which suffers from vendor lock-in and is not as customizable as Better Auth.
+
 ## The Communication Layer: tRPC
-
-This is the most important architectural decision, so let me explain it properly.
-
-### What is tRPC?
-
 tRPC stands for **TypeScript Remote Procedure Call**. Instead of defining REST endpoints with URLs and HTTP methods, you define *procedures*: functions that can be called from the client as if they were local. The big win is end-to-end type safety across the boundary.
-
-Here's a simplified example:
-
-**Server (NestJS):**
 
 ```typescript
 export const appRouter = router({
@@ -123,6 +131,29 @@ One thing to be aware of: tRPC's type inference can slow down TypeScript in larg
 
 If TypeScript starts to feel sluggish, there are a few practical ways to keep it under control: keep routers modular (split by domain instead of one giant router), avoid importing inference-heavy types everywhere, and consider exporting thinner types (for example `RouterInputs`/`RouterOutputs`) or consuming prebuilt `.d.ts` types from the server package so the client isn't constantly re-inferring everything.
 
+## Linting & Formatting: Biome
+
+For linting and formatting across the entire monorepo, I'm going with [Biome](https://biomejs.dev/) instead of the more popular ESLint + Prettier combo.
+
+### Why Not ESLint + Prettier?
+
+Honestly? Configuring ESLint for each project is annoying. I can't think of a single time I've actually enjoyed doing it. Even when AI generates the config, it often ends up bloated with plugins, extends, overrides, and rules that I don't fully understand or need.
+
+Biome takes a different approach: **one tool for both linting and formatting**, with sensible defaults and minimal configuration. A single `biome.json` at the root of the monorepo handles everything.
+
+```json
+{
+  "$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
+  "organizeImports": { "enabled": true },
+  "linter": { "enabled": true },
+  "formatter": { "enabled": true, "indentStyle": "space" }
+}
+```
+
+That's it. No `.eslintrc.js`, no `.prettierrc`, no `eslint-config-*` packages, no plugin compatibility headaches.
+
+The other thing I love about Biome is how **blazing fast** it is. It's written in Rust, and you can feel the difference immediately. Formatting an entire monorepo happens in milliseconds, not seconds. When you're iterating quickly, that speed compounds.
+
 ## Summary
 
 | Layer | Choice | Why |
@@ -134,6 +165,8 @@ If TypeScript starts to feel sluggish, there are a few practical ways to keep it
 | ORM | Prisma | Mature, reliable, great DX |
 | API Layer | tRPC | End-to-end type safety |
 | Database | PostgreSQL | Strong default, reliable ecosystem, great feature set |
+| Auth | Better Auth | Framework-agnostic, type-safe, secure defaults |
+| Linting & Formatting | Biome | Simple config, blazing fast, all-in-one |
 
 ---
 
