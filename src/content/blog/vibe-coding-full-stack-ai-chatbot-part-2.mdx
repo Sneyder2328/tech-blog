@@ -1,8 +1,8 @@
 ---
 title: "Vibe Coding a Full-Stack AI Chatbot Platform (Part 2): Tech Stack & Tooling Choices"
 description: "In this part, we walk through the technology choices for our AI chatbot project."
-pubDate: 2026-01-01
-tags: ["tutorial", "ai", "chatbot", "llm", "full-stack", "cursor", "typescript", "react", "nestjs", "trpc", "prisma", "postgresql", "better-auth", "biome"]
+pubDate: 2026-01-02
+tags: ["tutorial", "ai", "chatbot", "llm", "full-stack", "cursor", "typescript", "react", "nestjs", "trpc", "prisma", "postgresql", "better-auth", "biome", "shadcn-ui", "radix-ui"]
 heroImage: "/images/vibe-coding-full-stack-ai-chatbot-part-1-hero-image.jpg"
 ---
 
@@ -27,7 +27,9 @@ I'm going with a classic **client-server architecture** with communication power
 
 ## The Client: React + Vite + TanStack Router
 
-On the frontend, I'm keeping things straightforward: **React** as the UI layer, **Vite** for fast dev builds and simple configuration, **TanStack Router** for type-safe routing, and **Tailwind CSS** for styling. This should give us a modern client without dragging backend concerns into the frontend framework.
+On the frontend, I'm keeping things straightforward: **React** as the UI layer, **Vite** for fast dev builds and simple configuration, **TanStack Router** for type-safe routing, and **Tailwind CSS** for styling. For UI components, I'm using [shadcn/ui](https://ui.shadcn.com/), which is pretty much the expected choice for React + Tailwind projects these days. It's built on top of **Radix UI** primitives, so you get solid accessibility out of the box (focus management, keyboard navigation, ARIA attributes), while the styling stays in Tailwind. The nice thing about shadcn is that you copy the component source into your project, so you own the code and can customize freely without fighting a library's abstractions.
+
+This should give us a modern client without dragging backend concerns into the frontend framework.
 
 ### Why Not Next.js?
 
@@ -161,6 +163,7 @@ The other thing I love about Biome is how **blazing fast** it is. It's written i
 | Frontend | React + Vite | Fast builds, simple config |
 | Routing | TanStack Router | Type-safe, modern |
 | Styling | Tailwind CSS | Utility-first, rapid development |
+| UI Components | shadcn/ui (Radix) | Own the code, accessible, customizable |
 | Backend | NestJS | Structure, TypeScript, scalability |
 | ORM | Prisma | Mature, reliable, great DX |
 | API Layer | tRPC | End-to-end type safety |
