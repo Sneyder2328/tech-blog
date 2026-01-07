@@ -1,0 +1,363 @@
+---
+title: "Vibe Coding a Full-Stack AI Chatbot Platform (Part 5): Authentication with Better Auth"
+description: "Setting up Better Auth for secure authentication with email/password and Google OAuth, integrating it with our NestJS backend and React frontend — now with actual vibe coding."
+pubDate: 2026-01-23
+tags: ["tutorial", "ai", "chatbot", "llm", "full-stack", "cursor", "typescript", "react", "nestjs", "better-auth", "authentication", "oauth", "vibe-coding"]
+heroImage: "/images/vibe-coding-full-stack-ai-chatbot-part-5-hero-image.jpg"
+---
+
+This is Part 5 of the tutorial series. If you haven't read the previous parts, I recommend starting with [Part 1: Introduction](https://blog.sneyderangulo.com/blog/vibe-coding-full-stack-ai-chatbot-part-1).
+
+In Parts 1–4, we set up the foundation mostly by hand: the monorepo structure, tooling, apps, and database. Now it's time to actually *vibe code*. From this point forward, I'll be showing you the prompts I use, which AI model I'm working with, and summarized results rather than walls of code.
+
+The goal for this part: **complete authentication with Better Auth** — email/password signup/login, Google OAuth, session management, and protected routes.
+
+## The Vibe Coding Workflow
+
+Here's how I'll structure each section from now on:
+
+1. **🎯 Goal**: What we're trying to accomplish
+2. **💬 Prompt**: The actual prompt I give to the AI
+3. **🤖 Model**: Which model I'm using (I'll be switching between Claude Sonnet 4 and Gemini 2.5 Pro depending on the task)
+4. **📝 Summary**: What the AI generated, summarized
+5. **🔧 Adjustments**: Any manual tweaks I made
+
+Let's get into it.
+
+---
+
+## Setting Up Google OAuth Credentials
+
+Before we start coding, we need OAuth credentials from Google. This is a manual step — no AI needed.
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project or select an existing one
+3. Navigate to **APIs & Services > Credentials**
+4. Click **Create Credentials > OAuth client ID**
+5. Select **Web application**
+6. Add authorized JavaScript origins: `http://localhost:5173`
+7. Add authorized redirect URIs: `http://localhost:3000/api/auth/callback/google`
+8. Copy the Client ID and Client Secret — we'll need these shortly
+
+---
+
+## Step 1: Update the Database Schema for Auth
+
+**🎯 Goal**: Add the tables Better Auth needs (sessions, accounts, verifications) and update the User model with auth-related fields.
+
+**💬 Prompt**:
+> I need to update my Prisma schema to support Better Auth. Currently I have User, Chat, and Message models. I need to add the tables Better Auth requires for email/password auth and OAuth providers. Use the same conventions I have (@@map for snake_case table names, @map for column names, cuid for IDs). Keep my existing Chat and Message models unchanged.
+
+**🤖 Model**: Claude Sonnet 4 (via Cursor)
+
+**📝 Summary**: The AI updated `packages/db/prisma/schema.prisma` with:
+
+- **User model** — Added `emailVerified`, `image` fields and relations to `Session`, `Account`
+- **Session model** — New model with `token`, `expiresAt`, `ipAddress`, `userAgent`, timestamps
+- **Account model** — New model for OAuth providers and password storage with `providerId`, `accountId`, tokens, `password` field
+- **Verification model** — New model for email verification and password reset tokens
+
+**🔧 Adjustments**: None needed. The AI correctly followed my existing conventions.
+
+After the schema update:
+
+```bash
+pnpm db:generate
+pnpm db:push
+```
+
+---
+
+## Step 2: Install Better Auth
+
+**🎯 Goal**: Add Better Auth to both the API and web packages.
+
+**💬 Prompt**:
+> Add better-auth as a dependency to apps/api and apps/web
+
+**🤖 Model**: Claude Sonnet 4
+
+**📝 Summary**: Simple dependency additions:
+
+```bash
+# In apps/api
+pnpm add better-auth
+
+# In apps/web  
+pnpm add better-auth
+```
+
+---
+
+## Step 3: Configure Better Auth on the Backend
+
+**🎯 Goal**: Set up Better Auth with Prisma adapter, email/password auth, and Google OAuth in our NestJS app.
+
+**💬 Prompt**:
+> Set up Better Auth in my NestJS app at apps/api. I need:
+> - Prisma adapter using my db package
+> - Email/password authentication enabled
+> - Google OAuth provider
+> - Session cookie caching
+> - CORS support for my React client at localhost:5173
+> 
+> Create the auth configuration, a NestJS module, and a controller that handles all /api/auth/* routes. Also update main.ts for CORS and app.module.ts to include the auth module.
+
+**🤖 Model**: Claude Sonnet 4
+
+**📝 Summary**: The AI created several files:
+
+| File | Purpose |
+|------|---------|
+| `src/auth/auth.ts` | Better Auth configuration with Prisma adapter, providers, session settings |
+| `src/auth/auth.module.ts` | NestJS module registering the controller |
+| `src/auth/auth.controller.ts` | Catch-all controller for `/api/auth/*` using `toNodeHandler` |
+| `src/main.ts` | Updated with CORS config (`credentials: true`) |
+| `src/app.module.ts` | Added `ConfigModule` and `AuthModule` imports |
+
+**🔧 Adjustments**: I added the `db` package as a workspace dependency in `apps/api/package.json`:
+
+```json
+{
+  "dependencies": {
+    "db": "workspace:*"
+  }
+}
+```
+
+Then ran `pnpm install` from the root.
+
+---
+
+## Step 4: Environment Variables
+
+**🎯 Goal**: Create the `.env` file for the API with all required secrets.
+
+**💬 Prompt**:
+> Create a .env file for apps/api with the environment variables needed for Better Auth, the database connection, Google OAuth, and the client URL
+
+**🤖 Model**: Claude Sonnet 4
+
+**📝 Summary**: Created `apps/api/.env`:
+
+```env
+DATABASE_URL="postgresql://ai_chatbot_user:ai_chatbot_password@localhost:5434/ai_chatbot"
+BETTER_AUTH_SECRET="[generated-secret]"
+BETTER_AUTH_URL="http://localhost:3000"
+CLIENT_URL="http://localhost:5173"
+GOOGLE_CLIENT_ID="[from-google-console]"
+GOOGLE_CLIENT_SECRET="[from-google-console]"
+```
+
+**🔧 Adjustments**: Generated a proper secret with `openssl rand -base64 32` and added my actual Google OAuth credentials.
+
+---
+
+## Step 5: Create the Auth Client for React
+
+**🎯 Goal**: Set up the Better Auth client in the React app.
+
+**💬 Prompt**:
+> Create the Better Auth client for my React app at apps/web. Export the auth functions (signIn, signUp, signOut, useSession) that I'll need for the UI.
+
+**🤖 Model**: Claude Sonnet 4
+
+**📝 Summary**: Created `src/lib/auth-client.ts`:
+
+```typescript
+import { createAuthClient } from "better-auth/react"
+
+export const authClient = createAuthClient({
+  baseURL: import.meta.env.VITE_API_URL || "http://localhost:3000",
+})
+
+export const { signIn, signUp, signOut, useSession, getSession } = authClient
+```
+
+Also created `apps/web/.env`:
+
+```env
+VITE_API_URL=http://localhost:3000
+```
+
+---
+
+## Step 6: Build the Auth UI
+
+**🎯 Goal**: Create login and signup pages with a clean, modern design.
+
+**💬 Prompt**:
+> Create login and signup pages for my React app. Requirements:
+> - Clean, minimal design with dark mode support
+> - Email/password form fields
+> - Google OAuth button with the Google logo SVG
+> - Loading states and error handling
+> - Links to switch between login and signup
+> - Use the auth functions from src/lib/auth-client.ts
+> 
+> Also create reusable Button and Input components using class-variance-authority and tailwind-merge (already installed).
+
+**🤖 Model**: Gemini 2.5 Pro (switched for UI work — it tends to produce cleaner designs)
+
+**📝 Summary**: The AI created:
+
+| File | Purpose |
+|------|---------|
+| `src/components/ui/button.tsx` | Reusable button with variants (default, outline, ghost) and sizes |
+| `src/components/ui/input.tsx` | Styled input component with dark mode support |
+| `src/pages/login.tsx` | Login page with email/password form and Google OAuth |
+| `src/pages/signup.tsx` | Signup page with name, email, password fields |
+
+Key features in the generated UI:
+- Neutral color palette that works in both light and dark modes
+- Proper form validation and error display
+- Loading spinners during auth operations
+- Google logo as inline SVG
+- Responsive layout centered on screen
+
+**🔧 Adjustments**: 
+- Changed some spacing values to my preference
+- Tweaked the Google button to use `variant="outline"` instead of a custom style
+
+---
+
+## Step 7: Wire Up the App Component
+
+**🎯 Goal**: Update the main App component to show login when unauthenticated and a welcome screen when authenticated.
+
+**💬 Prompt**:
+> Update src/App.tsx to:
+> - Use the useSession hook to check auth state
+> - Show a loading spinner while checking session
+> - Show the LoginPage if not authenticated
+> - Show a welcome message with the user's name and a sign out button if authenticated
+
+**🤖 Model**: Claude Sonnet 4
+
+**📝 Summary**: Updated `src/App.tsx` to conditionally render based on session state:
+
+- `isPending` → Loading spinner
+- `!session` → `<LoginPage />`
+- `session` → Welcome message + sign out button
+
+---
+
+## Step 8: Create an Auth Guard for Protected Endpoints
+
+**🎯 Goal**: Create a NestJS guard that protects API routes and attaches the session to the request.
+
+**💬 Prompt**:
+> Create a NestJS guard that checks if the user is authenticated using Better Auth. If not authenticated, throw UnauthorizedException. If authenticated, attach the session to the request object so controllers can access it.
+
+**🤖 Model**: Claude Sonnet 4
+
+**📝 Summary**: Created `src/auth/auth.guard.ts`:
+
+```typescript
+@Injectable()
+export class AuthGuard implements CanActivate {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = context.switchToHttp().getRequest<Request>()
+    const session = await auth.api.getSession({
+      headers: request.headers as Headers,
+    })
+    
+    if (!session) {
+      throw new UnauthorizedException("Not authenticated")
+    }
+    
+    (request as any).session = session
+    return true
+  }
+}
+```
+
+Now any controller can use `@UseGuards(AuthGuard)` to require authentication.
+
+---
+
+## Testing the Full Flow
+
+Time to verify everything works. Make sure Docker is running:
+
+```bash
+docker compose up -d
+```
+
+Start the dev servers:
+
+```bash
+pnpm dev
+```
+
+Open `http://localhost:5173` and test:
+
+1. **Sign up** — Create a new account with email/password
+2. **Sign out** — Click the sign out button
+3. **Sign in** — Log back in with your credentials
+4. **Google OAuth** — Try the Google button (requires valid OAuth credentials)
+
+Check the browser DevTools → Application → Cookies. You should see an HTTP-only session cookie from `localhost:3000`.
+
+---
+
+## Troubleshooting
+
+A few issues I ran into and how I fixed them:
+
+**"CORS error" when calling auth endpoints**
+- Made sure `credentials: true` was set in the NestJS CORS config
+- Verified `trustedOrigins` in Better Auth config included `http://localhost:5173`
+
+**Google OAuth redirect failing**
+- The redirect URI in Google Console must match *exactly*: `http://localhost:3000/api/auth/callback/google`
+- Don't forget to enable the Google+ API in the console
+
+**Session not persisting after page refresh**
+- The `BETTER_AUTH_SECRET` was missing — Better Auth silently fails without it
+- Added it to `.env` and restarted the server
+
+---
+
+## What We've Accomplished
+
+- ✅ **Database schema** updated with auth tables (Session, Account, Verification)
+- ✅ **Better Auth** configured on NestJS with Prisma adapter
+- ✅ **Email/password auth** working with signup and login
+- ✅ **Google OAuth** integrated as a social provider
+- ✅ **React auth client** with hooks for session management
+- ✅ **Login/Signup UI** with clean, dark-mode-ready design
+- ✅ **Auth guard** for protecting API endpoints
+
+---
+
+## Vibe Coding Observations
+
+A few notes on the AI-assisted development experience for this part:
+
+**What worked well:**
+- Schema updates were nearly perfect — the AI understood my conventions and applied them consistently
+- The Better Auth integration was straightforward; the AI knew the library well
+- UI components came out clean with proper TypeScript types
+
+**What needed manual work:**
+- Environment variables always need manual handling (secrets, OAuth credentials)
+- Workspace package linking (`"db": "workspace:*"`) wasn't automatically added
+- Some styling preferences are subjective — I tweaked spacing and colors
+
+**Model choice:**
+- **Claude Sonnet 4** for backend/infrastructure work — more precise, follows instructions closely
+- **Gemini 2.5 Pro** for UI work — tends to produce more polished designs out of the box
+
+---
+
+## Next Steps
+
+Users can now sign up and sign in, but the app doesn't do much yet. In **Part 6**, we'll set up tRPC for end-to-end type safety between our React client and NestJS server:
+
+- Create a shared tRPC package with the router definition
+- Wire tRPC into NestJS with authentication context
+- Set up the tRPC client in React with TanStack Query
+- Build our first authenticated procedures (create chat, list chats)
+
+The auth foundation is solid. Time to build the API layer.

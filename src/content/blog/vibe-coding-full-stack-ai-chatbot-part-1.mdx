@@ -6,22 +6,28 @@ tags: ["tutorial", "ai", "chatbot", "llm", "full-stack", "cursor", "typescript",
 heroImage: "/images/vibe-coding-full-stack-ai-chatbot-part-1-hero-image.jpg"
 ---
 
-Hey everyone — welcome to the first post in this new tutorial series.
+Hey everyone and welcome to the first post in this new tutorial series.
 
-Over the next few weeks, I'll be building a full-stack LLM chat platform from scratch, mostly by vibe coding. The goal is to replicate the core experience of modern AI chatbots (think ChatGPT or Gemini), while also adding features like forking conversations, supporting multiple LLM providers, and letting users refine their own system prompts.
+Over the next few weeks, I'll be building a full-stack LLM chat platform from scratch, mostly by vibe coding. The goal is to replicate the core experience of modern AI chatbots (like ChatGPT or Gemini), while also adding richer features like forking conversations, supporting multiple LLM providers, and letting users refine their own system prompts.
 
-This series is primarily about exploring what's possible with today's state-of-the-art models. If you're new to coding (or new to building with AI-assisted workflows), this will be a practical look at how far we can get by combining solid engineering fundamentals with modern tools like **Cursor**.
+This series is primarily about exploring what's possible with today's state-of-the-art models. If you're new to coding (or new to building with AI-assisted workflows), this will be a practical look at how far we can get by combining solid engineering fundamentals with modern **ai tools** like the following which are the ones I'll be using:
+- **Cursor**: The IDE that will be used to write the code. I will use its agentic features to help me with the code generation and to help me with the code review too. I prefer it very much over VSCode with copilot or other alternatives such as windsurf, antigravity or trae because I have found it to be smoother and more reliable, specially its tab completion feature is unmatched at this point in time.
+- **Claude Opus 4.5**: The LLM that will be used to help with code generation for simple tasks. It is blazing fast and generates mostly good code.
+- **Claude Opus 4.5 Thinking**: The LLM that will be used to help with code generation for complex tasks. It is just a bit slower than Claude Opus 4.5 but still pretty fast, it does more reasoning thus is usually more reliable. It does consume more tokens for its deeper reasoning though so it's more expensive.
+- **GPT-5.2 Extra High reasoning**: The LLM that will be used to help with code generation for the most complex tasks that I don't really mind waiting for. It excels at reasoning and problem solving through large context windows since it can better retain the information in the context window as it reaches its limit, this often ends up being more reliable for longer tasks.
 
-Crucially, **we are not treating AI as a black box.** The goal here is to accelerate development while ensuring we still understand and intentionally make every architectural choice from the get-go.
+Why not gemini pro models? Because I have found them to be way less reliable and with lower quality results than the other models I mentioned above. I do believe gemini models are awesome for image generation and other creative tasks but for coding, they still have a long way to go.
+
+Also, important to note that **we are not treating AI as a black box** in a totally vibe coding approach. The goal here is to accelerate development of the intented project as much as reasonably possible while ensuring we still understand and intentionally make every architectural choice from the get-go. So the first parts of the series will be done by hand to make sure the setup is correct and mostly so we install the most up to date versions of the different npm packages we will be using since LLMs tend to mess up the setup due to the use of docs from older or deprecated configs and versions.
 
 ## A note on my workflow
 
-I am using AI to assist with the content creation itself. I use tools like **Nano Banana** to generate the hero images, and I use LLMs to help polish my writing structure.
+I am using AI to assist with the content creation itself. For example, I use tools like **Nano Banana** to generate the hero images, and I use LLMs to help polish my writing structure.
 
-As a developer from Venezuela, English isn't my native language. AI helps me connect my ideas cohesively, but I want to be clear: **the opinions, code decisions, and technical direction are 100% mine.** I review and verify every section to ensure this isn't just "AI-generated junk," but a high-quality resource you can trust.
+As a developer from Venezuela, English isn't my native language. AI helps me connect my ideas cohesively, but I want to be clear: **the opinions, code decisions, and technical direction are 100% mine.** I review and verify every single section and detail to make sure this isn't just AI-generated junk, but a high-quality resource you can trust.
 
 If this sounds interesting, I'm open to discussion regarding features, architecture suggestions, and implementation tradeoffs. The codebase will be open source on GitHub under the **MIT license**, and contributions are welcome.
 
-I'm aiming to publish one article per week until we ship a complete product. Let's get building.
+I'm aiming to publish at least one article per week until we ship a complete product. Let's get building.
 
 **Next up:** [Part 2: Tech Stack & Tooling Choices](https://blog.sneyderangulo.com/blog/vibe-coding-full-stack-ai-chatbot-part-2) is now available! We'll dive into selecting the perfect tech stack for our AI chatbot platform, covering the reasoning behind each choice and how they'll work together to create a robust, scalable solution.

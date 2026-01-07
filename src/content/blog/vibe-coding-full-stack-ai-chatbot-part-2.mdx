@@ -35,21 +35,19 @@ This should give us a modern client without dragging backend concerns into the f
 
 ### Why Not Next.js?
 
-If I let an LLM pick the stack, it would almost certainly recommend Next.js. Which kinda makes sense since it has a huge ecosystem, great docs, and for many teams it’s the default choice for React apps in 2025.
+If I let an LLM pick the stack, it would almost certainly recommend Next.js. Which kinda makes sense since it has a huge ecosystem, great docs, and for many teams it’s the default choice for React apps in 2025 (probably still true in 2026, let's see).
 
 But I don’t think this project really needs it.
 
-This chatbot doesn’t require server-side rendering, React Server Components, edge functions, or server actions.
+This chatbot doesn’t require server-side rendering, React Server Components, edge functions, or server actions. Specially, after the known vulnerabilities with React Server Components (CVE-2025-55182, CVE-2025-55184, and the other ones discovered right afterwards) I don't feel any enthusiastic about using them.
 
-What it does need is a clean separation between client and server, where the server handles authentication, database connection pooling, background jobs (cron tasks), and http streaming for real-time chat.
-
-A dedicated NestJS server handles all of this more elegantly than trying to put it all into Next.js API routes.
+What I prefer for this project is a clean separation of concerns between the client and the server, where the server handles authentication, database connection pooling, background jobs (cron tasks), and http streaming for real-time chat and the client handles the UI and the user interactions smoothly and performant thanks to the use of the React Compiler and code splitting.
 
 ## The Server: NestJS
 
 [NestJS](https://nestjs.com/) is a Node.js framework that brings structure to backend development. If you’ve built backends in Java, especially with Spring Boot, a lot of it will feel familiar: decorators that read like annotations, dependency injection, and a module-first structure that keeps things organized as the codebase grows.
 
-I used to be an Android Java dev back in the day, and I still prefer codebases with clear boundaries. NestJS is TypeScript-first, scales nicely as you add features, and it gives you solid primitives for cross-cutting concerns (guards, interceptors, middleware) without fighting the framework.
+I used to be an Android Java dev back in the day, and I still prefer codebases with clear boundaries and using design patterns like MVC, MVVM, MVP, etc. NestJS is TypeScript-first, scales nicely as you add features, and it gives you solid primitives for cross-cutting concerns (guards, interceptors, middleware) with ease.
 
 ```typescript
 @Controller('chat')
@@ -64,25 +62,25 @@ export class ChatController {
 
 ## The ORM: Prisma
 
-For database access, I'm using **Prisma** over the newer Drizzle ORM.
+For database access, I'm using **Prisma** over the newer Drizzle ORM or other options like the even more mature Sequelize or TypeORM.
 
-This was a tough call. Drizzle has been getting a lot of hype for its performance and SQL-like syntax, and I do like its approach. But for this project I’m choosing the more battle-tested option: Prisma has more real-world edge cases documented, the day-to-day DX is hard to beat, and the schema + migrations workflow is consistently reliable. In practice, query design and indexing matter far more than small ORM overhead differences.
+This was a tough call to be honest. There are 2 clear winners here for modern ORMs: Drizzle and Prisma. Drizzle has been getting a lot of hype for its performance and SQL-like syntax, and I do like its approach. But for this project I’m choosing the more battle-tested option of the two: Prisma has more real-world edge cases documented, the day-to-day DX is hard to beat, and the schema + migrations workflow is consistently reliable.
 
-For a project where database interactions are critical, I’d rather bet on the safer, more mature option.
+I have not used TypeORM before so I really can't really comment on it, and as for Sequelize, I have indeed used it and believe is too verbose and complex for this project, requires manual migration files, DX-wise not ideal either because it is not typescript-first like Prisma so not a good fit under my opinion.
 
 ## The Database: PostgreSQL
 
-I picked **PostgreSQL** mostly for an unglamorous reason: it feels like the default relational database these days. If you ask ten developers what to use for a new product, a lot of them will say Postgres without thinking too hard, and there’s value in following that gravity.
+I picked **PostgreSQL** mostly for a simple reason: it just feels like it is the default choice for a relational database these days. If you ask ten developers what to use for a new product, a lot of them will say Postgres without thinking too hard, and actually there’s some value in following that.
 
-MySQL used to be the obvious default, but it feels less community-driven since the Oracle acquisition. And while open source alternatives like MariaDB are solid, I’m not convinced they get the same level of long-term ecosystem support and maintenance as Postgres across the managed hosting providers, libraries, and tooling I want to rely on.
+Back in the day, MySQL used to be the obvious default, but it feels less community-driven since the Oracle acquisition. And while open source alternatives like MariaDB are solid, I’m not convinced they get the same level of long-term ecosystem support and maintenance as Postgres.
 
-Technically, Postgres also fits this project really well. It behaves great under concurrency, it’s strict about data integrity, and it has a deep feature set you end up appreciating as the product grows. JSONB is genuinely useful when you’re building AI products (metadata, model configs, tool call traces, provider payloads). And importantly for what I want to build next, Postgres has strong extension support for vectors, so we can store and query embeddings (for example with `pgvector`) when we add semantic search, retrieval, and similar features later on.
+Technically, Postgres also fits this project really well as it behaves great under concurrency, it’s strict about data integrity, and it has a deep feature set you end up appreciating as the product grows. JSONB is genuinely useful when you’re building AI products (metadata, model configs, tool call traces, provider payloads). And importantly for what I want to build next, Postgres has strong extension support for vectors, so we can store and query embeddings (for example with `pgvector`) for when we add RAG features later on.
 
 ## Authentication: Better Auth
 
-I remember the good old days when we had to set up auth from scratch: create a sessions table, handle password hashing with bcrypt (plus some salt and maybe some pepper), manage JWTs, refresh tokens, email validation, OTP, forgot password flows... and then repeat that custom system for every new project.
+I remember when I started coding that I had to set up authentication from scratch (or so I thought): create a sessions table, handle password hashing with bcrypt (plus some salt and maybe some pepper cause why not), manage JWTs, refresh tokens, email validation, OTP, forgot password flows... and then repeat that custom system for every new project or copy-paste it from a previous one with minor modifications.
 
-In more recent years, after the surge of Next.js, a library called **NextAuth** (now Auth.js) became the de facto standard for authentication in the Next.js ecosystem. But since we're not using Next.js, we need something more flexible.
+Then, in more recent years, after the surge of Next.js, a library called **NextAuth** (now Auth.js) became the de facto standard for authentication in the Next.js ecosystem. But since we're not using Next.js, we need something more flexible.
 
 Enter [Better Auth](https://www.better-auth.com/).
 
@@ -93,11 +91,12 @@ For our stack, Better Auth fits nicely:
 - **Server-side (NestJS):** We wire it up with a direct connection to our Postgres database via Prisma. It handles session management, password hashing, and token generation out of the box.
 - **Client-side (React):** The React integration works seamlessly, and it uses **HTTP-only cookies** for session storage by default, which is ideal for web apps as it prevents CSRF attacks.
 
-So no more reinventing the wheel for every project. Authentication is one of those things where using a battle-tested library is almost always the right call. Other options worth mentioning include **Keycloak**, which is a bit overkill for this project, and **Firebase Auth**, which suffers from vendor lock-in and is not as customizable as Better Auth.
+So no more reinventing the wheel for every project. Authentication is one of those things where using a battle-tested library is almost always the right call. Other options worth mentioning include **Keycloak**, which is a bit overkill for this project, and **Firebase Auth**, which suffers from vendor lock-in, depends on Google not killing firebase (we all know how that goes), and is not as customizable as Better Auth.
 
 ## The Communication Layer: tRPC
 tRPC stands for **TypeScript Remote Procedure Call**. Instead of defining REST endpoints with URLs and HTTP methods, you define *procedures*: functions that can be called from the client as if they were local. The big win is end-to-end type safety across the boundary.
 
+**Server (NestJS):**
 ```typescript
 export const appRouter = router({
   chat: router({
@@ -125,19 +124,19 @@ mutation.mutate({ content: 'Hello AI!' });
 
 ### Why Not REST + OpenAPI?
 
-In past projects, I've built REST APIs with Swagger decorators and used code generators like **Orval** to create typed clients. It works, but it comes with a few annoyances: Swagger docs can drift out of sync with real types, you add an extra generation step to your workflow, and you can still end up with runtime mismatches when the backend changes and the client hasn’t been regenerated yet.
+In past projects, I've built REST APIs with Swagger decorators and used code generators like **Orval** to create typed clients and it works, but it comes with a few caveats: Swagger docs can drift out of sync with real types really easily, you need to add an extra generation step to your workflow, and you can end up with runtime mismatches when the backend changes and the client hasn’t been regenerated yet.
 
-With tRPC in a monorepo, types flow directly from server to client. Change a procedure’s return type and your frontend will complain immediately, which keeps types in sync during refactors and speeds up iteration. It’s also a nice fit when you’re iterating quickly with AI-assisted coding, because type drift shows up instantly.
+Now, with tRPC in a monorepo, types flow smoothly from server to client. Change a procedure’s return type and your frontend will complain immediately, which keeps types in sync during refactors and speeds up iteration. It’s also a nice fit when you’re iterating quickly with AI-assisted coding, because type differences show up instantly so you (or AI) can fix it before the code even hits production.
 
 ### A Note on Performance
 
-One thing to be aware of: tRPC's type inference can slow down TypeScript in large projects. And realistically, a chatbot backend can easily grow into dozens of procedures as you add chat, users, billing, admin tools, analytics, and integrations.
+One thing to be aware of is tRPC's type inference can slow down TypeScript in large projects. And realistically, a chatbot backend can easily grow into dozens of procedures as you add chat, users, billing, admin tools, analytics, and integrations.
 
-If TypeScript starts to feel sluggish, there are a few practical ways to keep it under control: keep routers modular (split by domain instead of one giant router), avoid importing inference-heavy types everywhere, and consider exporting thinner types (for example `RouterInputs`/`RouterOutputs`) or consuming prebuilt `.d.ts` types from the server package so the client isn't constantly re-inferring everything.
+But, the good news is that if TypeScript starts to feel sluggish, there are a few practical ways to keep it under control: keep routers modular (split by domain instead of one giant router), avoid importing inference-heavy types everywhere, and consider exporting thinner types (for example `RouterInputs`/`RouterOutputs`) or consuming prebuilt `.d.ts` types from the server package so the client isn't constantly re-inferring everything.
 
 ## Linting & Formatting: Biome
 
-For linting and formatting across the entire monorepo, I'm going with [Biome](https://biomejs.dev/) instead of the more popular ESLint + Prettier combo.
+For linting and formatting across the entire monorepo, I'm going with [Biome](https://biomejs.dev/) instead of the more popular and battle-tested ESLint + Prettier combo.
 
 ### Why Not ESLint + Prettier?
 
@@ -156,7 +155,7 @@ Biome takes a different approach: **one tool for both linting and formatting**, 
 
 That's it. No `.eslintrc.js`, no `.prettierrc`, no `eslint-config-*` packages, no plugin compatibility headaches.
 
-The other thing I love about Biome is how **blazing fast** it is. It's written in Rust, and you can feel the difference immediately. Formatting an entire monorepo happens in milliseconds, not seconds. When you're iterating quickly, that speed compounds.
+The other thing I love about Biome is how **blazing fast** it is. It's written in Rust, and you can feel the difference immediately. Formatting an entire monorepo happens in milliseconds, not seconds. When you're iterating quickly, withs lots of code being generated by AI, that speed compounds.
 
 ## Summary
 
