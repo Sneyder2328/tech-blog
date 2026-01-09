@@ -342,17 +342,18 @@ Key features in the generated UI:
 @Injectable()
 export class AuthGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest<Request>()
+    const req = context.switchToHttp().getRequest<Request>();
+
     const session = await auth.api.getSession({
-      headers: request.headers as Headers,
-    })
-    
-    if (!session) {
-      throw new UnauthorizedException("Not authenticated")
+      headers: fromNodeHeaders(req.headers),
+    });
+
+    if (!session || !session.user) {
+      throw new UnauthorizedException();
     }
-    
-    (request as any).session = session
-    return true
+
+    req.session = session;
+    return true;
   }
 }
 ```
@@ -394,13 +395,8 @@ A few issues I ran into and how I fixed them:
 - Made sure `credentials: true` was set in the NestJS CORS config
 - Verified `trustedOrigins` in Better Auth config included `http://localhost:5173`
 
-**Google OAuth redirect failing**
-- The redirect URI in Google Console must match *exactly*: `http://localhost:3000/api/auth/callback/google`
-- Don't forget to enable the Google+ API in the console
-
-**Session not persisting after page refresh**
-- The `BETTER_AUTH_SECRET` was missing — Better Auth silently fails without it
-- Added it to `.env` and restarted the server
+**Tables issues with better-auth ids**
+- I had to create a migration to update the type of the id column from UUID to String since Better Auth uses String for the id column. So current tables which rely on better-auth ids use String for the id column but other tables to be added in the future will use UUIDv7 with UUID type as expected.
 
 ---
 
@@ -421,18 +417,11 @@ A few issues I ran into and how I fixed them:
 A few notes on the AI-assisted development experience for this part:
 
 **What worked well:**
-- Schema updates were nearly perfect — the AI understood my conventions and applied them consistently
 - The Better Auth integration was straightforward; the AI knew the library well
-- UI components came out clean with proper TypeScript types
+- UI components came out clean with proper TypeScript types and design looks clean.
 
 **What needed manual work:**
-- Environment variables always need manual handling (secrets, OAuth credentials)
-- Workspace package linking (`"db": "workspace:*"`) wasn't automatically added
-- Some styling preferences are subjective — I tweaked spacing and colors
-
-**Model choice:**
-- **Claude Sonnet 4** for backend/infrastructure work — more precise, follows instructions closely
-- **Gemini 2.5 Pro** for UI work — tends to produce more polished designs out of the box
+- Environment variables always need manual handling (secrets, OAuth credentials), although cursor can help with the generation of the .env file and even add the content when the values are known.
 
 ---
 
@@ -446,3 +435,5 @@ Users can now sign up and sign in, but the app doesn't do much yet. In **Part 6*
 - Build our first authenticated procedures (create chat, list chats)
 
 The auth foundation is solid. Time to build the API layer.
+
+> **📁 Repository State**: The current state of the codebase described in this article is available in the [`feat/auth-setup`](https://github.com/Sneyder2328/ai-chatbot/tree/feat/auth-setup) branch on GitHub.
