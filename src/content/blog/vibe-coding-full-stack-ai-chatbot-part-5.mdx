@@ -8,9 +8,9 @@ heroImage: "/images/vibe-coding-full-stack-ai-chatbot-part-5-hero-image.jpg"
 
 This is Part 5 of the tutorial series. If you haven't read the previous parts, I recommend starting with [Part 1: Introduction](https://blog.sneyderangulo.com/blog/vibe-coding-full-stack-ai-chatbot-part-1).
 
-In Parts 1–4, we set up the foundation mostly by hand: the monorepo structure, tooling, apps, and database. Now it's time to actually *vibe code*. From this point forward, I'll be showing you the prompts I use, which AI model I'm working with, and summarized results rather than walls of code.
+In Parts 1–4, we set up the foundation mostly by hand: the monorepo structure, tooling, apps, and database. Now it's time to actually *vibe code*. From this point forward, I'll be showing you the prompts I use, which AI model I'm working with, summarized results of what the AI generated and provide a link to a branch on github with the snapshot of the code at this point.
 
-The goal for this part: **complete authentication with Better Auth** — email/password signup/login, Google OAuth, session management, and protected routes.
+The goal for this part: **implement authentication with Better Auth** allowing for signup and login with email/password, enable Google OAuth, handle session management, and protected routes in the backend.
 
 ## The Vibe Coding Workflow
 
@@ -18,7 +18,7 @@ Here's how I'll structure each section from now on:
 
 1. **🎯 Goal**: What we're trying to accomplish
 2. **💬 Prompt**: The actual prompt I give to the AI
-3. **🤖 Model**: Which model I'm using (I'll be switching between Claude Sonnet 4 and Gemini 2.5 Pro depending on the task)
+3. **🤖 Model**: Which model I'm using (I'll be switching between Claude Opus 4 and GPT 5.2 depending on the task)
 4. **📝 Summary**: What the AI generated, summarized
 5. **🔧 Adjustments**: Any manual tweaks I made
 
@@ -46,18 +46,86 @@ Before we start coding, we need OAuth credentials from Google. This is a manual 
 **🎯 Goal**: Add the tables Better Auth needs (sessions, accounts, verifications) and update the User model with auth-related fields.
 
 **💬 Prompt**:
-> I need to update my Prisma schema to support Better Auth. Currently I have User, Chat, and Message models. I need to add the tables Better Auth requires for email/password auth and OAuth providers. Use the same conventions I have (@@map for snake_case table names, @map for column names, cuid for IDs). Keep my existing Chat and Message models unchanged.
+> I need to update my Prisma schema to support Better Auth. Right now I only have a minimal `User` model. Add the tables Better Auth requires for email/password auth and OAuth providers (in my case i will be using Google OAuth but want to keep the schema flexible for other providers) and update the User model with auth-related fields.
+>
+> Use the same conventions I have (`@@map` for snake_case table names, `@map` for column names), **UUIDv7** for IDs (`@default(uuid(7)) @db.Uuid`), and use **PostgreSQL `timestamptz`** (`@db.Timestamptz`) for timestamps.
 
-**🤖 Model**: Claude Sonnet 4 (via Cursor)
+**🤖 Model**: GPT 5.2 Extra High Reasoning (via Cursor)
 
 **📝 Summary**: The AI updated `packages/db/prisma/schema.prisma` with:
 
-- **User model** — Added `emailVerified`, `image` fields and relations to `Session`, `Account`
-- **Session model** — New model with `token`, `expiresAt`, `ipAddress`, `userAgent`, timestamps
-- **Account model** — New model for OAuth providers and password storage with `providerId`, `accountId`, tokens, `password` field
+- **User model** — Added `emailVerified`, `image` fields and relations to `Session`, `Account` (IDs are UUIDv7)
+- **Session model** — New model with `token`, `expiresAt`, `ipAddress`, `userAgent`, `createdAt`, `updatedAt` (timestamps are `timestamptz`)
+- **Account model** — New model for OAuth providers and password storage with `providerId`, `accountId`, tokens, `password` field (plus a composite unique constraint)
 - **Verification model** — New model for email verification and password reset tokens
 
 **🔧 Adjustments**: None needed. The AI correctly followed my existing conventions.
+
+Here’s the resulting schema (showing the key auth tables):
+
+```prisma
+model User {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  email         String   @unique
+  name          String?
+  emailVerified Boolean  @default(false) @map("email_verified")
+  image         String?
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  sessions Session[]
+  accounts Account[]
+
+  @@map("users")
+}
+
+model Session {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  token     String   @unique
+  userId    String   @map("user_id") @db.Uuid
+  expiresAt DateTime @map("expires_at") @db.Timestamptz
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model Account {
+  id                    String    @id @default(uuid(7)) @db.Uuid
+  accountId             String    @map("account_id")
+  providerId            String    @map("provider_id")
+  userId                String    @map("user_id") @db.Uuid
+  accessToken           String?   @map("access_token")
+  refreshToken          String?   @map("refresh_token")
+  idToken               String?   @map("id_token")
+  accessTokenExpiresAt  DateTime? @map("access_token_expires_at") @db.Timestamptz
+  refreshTokenExpiresAt DateTime? @map("refresh_token_expires_at") @db.Timestamptz
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, accountId])
+  @@map("accounts")
+}
+
+model Verification {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  identifier String
+  value      String
+  expiresAt  DateTime @map("expires_at") @db.Timestamptz
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("verifications")
+}
+```
 
 After the schema update:
 
@@ -72,18 +140,15 @@ pnpm db:push
 
 **🎯 Goal**: Add Better Auth to both the API and web packages.
 
-**💬 Prompt**:
-> Add better-auth as a dependency to apps/api and apps/web
+**📋 Manual Steps**:
 
-**🤖 Model**: Claude Sonnet 4
-
-**📝 Summary**: Simple dependency additions:
+Add the `better-auth` dependency to both packages:
 
 ```bash
 # In apps/api
 pnpm add better-auth
 
-# In apps/web  
+# In apps/web
 pnpm add better-auth
 ```
 
@@ -99,11 +164,11 @@ pnpm add better-auth
 > - Email/password authentication enabled
 > - Google OAuth provider
 > - Session cookie caching
-> - CORS support for my React client at localhost:5173
+> - CORS support for my React client at localhost:5173 (use an env variable)
 > 
 > Create the auth configuration, a NestJS module, and a controller that handles all /api/auth/* routes. Also update main.ts for CORS and app.module.ts to include the auth module.
 
-**🤖 Model**: Claude Sonnet 4
+**🤖 Model**: GPT 5.2 Extra High Reasoning
 
 **📝 Summary**: The AI created several files:
 
@@ -126,6 +191,21 @@ pnpm add better-auth
 ```
 
 Then ran `pnpm install` from the root.
+
+### A Follow-Up: Making `packages/db` Buildable
+
+Right after Step 3, I hit a runtime issue: the API was consuming `packages/db` directly from TypeScript source (`src/index.ts`), and Node couldn’t reliably resolve Prisma’s generated client imports in that setup.
+
+So I asked **GPT 5.2 Extra High** to make `packages/db` a **buildable package** that outputs JavaScript and type declarations, and then had the API consume that built output.
+
+**📝 What we did (short summary):**
+
+- **Created a shared TS config package** (`packages/tsconfig`) so apps/packages can reuse consistent compiler settings.
+- **Updated Prisma generation** so the generated client uses `.js` import specifiers (more compatible once compiled).
+- **Added a proper build pipeline for `packages/db`**:
+  - `pnpm --filter db build` generates Prisma client and compiles to `packages/db/dist/`
+  - `packages/db/package.json` now points `main`/`types`/`exports` to `dist`
+- **Updated the API dev flow** to ensure `db` is built before starting the Nest dev server.
 
 ---
 
@@ -160,7 +240,7 @@ GOOGLE_CLIENT_SECRET="[from-google-console]"
 **💬 Prompt**:
 > Create the Better Auth client for my React app at apps/web. Export the auth functions (signIn, signUp, signOut, useSession) that I'll need for the UI.
 
-**🤖 Model**: Claude Sonnet 4
+**🤖 Model**: Claude Opus 4.5
 
 **📝 Summary**: Created `src/lib/auth-client.ts`:
 
@@ -189,15 +269,20 @@ VITE_API_URL=http://localhost:3000
 **💬 Prompt**:
 > Create login and signup pages for my React app. Requirements:
 > - Clean, minimal design with dark mode support
+> - Use Tailwind CSS for styling, following mobile-first design principles
 > - Email/password form fields
 > - Google OAuth button with the Google logo SVG
 > - Loading states and error handling
 > - Links to switch between login and signup
 > - Use the auth functions from src/lib/auth-client.ts
-> 
-> Also create reusable Button and Input components using class-variance-authority and tailwind-merge (already installed).
+>
+> Also create reusable Button and Input components using shadcn/ui components.
+>
+> Create a `cn` utility function that combines clsx and tailwind-merge for merging Tailwind classes, and use it consistently for classnames across all components.
+>
+> Also create a design system base in Tailwind CSS with custom color palette, typography scale, spacing values, and component-specific design tokens.
 
-**🤖 Model**: Gemini 2.5 Pro (switched for UI work — it tends to produce cleaner designs)
+**🤖 Model**: Claude Opus 4.5 Thinking (switched for UI work — it tends to produce cleaner designs than GPT 5.2)
 
 **📝 Summary**: The AI created:
 
@@ -216,8 +301,8 @@ Key features in the generated UI:
 - Responsive layout centered on screen
 
 **🔧 Adjustments**: 
-- Changed some spacing values to my preference
-- Tweaked the Google button to use `variant="outline"` instead of a custom style
+- Named the AI Chatbot Platform as 'Ask Cosmos'.
+- Asked the AI to generate a logo for it and use it as favicon.
 
 ---
 
@@ -249,7 +334,7 @@ Key features in the generated UI:
 **💬 Prompt**:
 > Create a NestJS guard that checks if the user is authenticated using Better Auth. If not authenticated, throw UnauthorizedException. If authenticated, attach the session to the request object so controllers can access it.
 
-**🤖 Model**: Claude Sonnet 4
+**🤖 Model**: GPT 5.2 Extra High Reasoning
 
 **📝 Summary**: Created `src/auth/auth.guard.ts`:
 

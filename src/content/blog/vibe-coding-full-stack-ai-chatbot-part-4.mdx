@@ -13,7 +13,7 @@ In [Part 3](https://blog.sneyderangulo.com/blog/vibe-coding-full-stack-ai-chatbo
 We're going to:
 1. Spin up PostgreSQL in Docker
 2. Create a shared database package with Prisma
-3. Define our initial schema for users, chats, and messages
+3. Define a minimal initial schema (starting with users)
 4. Generate the Prisma client and push the schema
 
 By the end, you'll have a fully typed database layer ready to be consumed by our API.
@@ -123,51 +123,36 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(cuid())
+  id        String   @id @default(uuid(7)) @db.Uuid
   email     String   @unique
   name      String?
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamp
-
-  chats Chat[]
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
   @@map("users")
-}
-
-model Chat {
-  id        String   @id @default(cuid())
-  title     String
-  userId    String   @map("user_id")
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamp
-
-  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  messages Message[]
-
-  @@map("chats")
-}
-
-model Message {
-  id        String   @id @default(cuid())
-  chatId    String   @map("chat_id")
-  role      String   // 'user' | 'assistant'
-  content   String
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp
-
-  chat Chat @relation(fields: [chatId], references: [id], onDelete: Cascade)
-
-  @@map("messages")
 }
 ```
 
 A few things to note about this schema:
 
 - **`@@map("table_name")`**: Maps the Prisma model name to a snake_case table name in the database. This keeps our TypeScript code using PascalCase while the database uses the more conventional snake_case.
-- **`@map("column_name")`**: Same idea for column names — `userId` in TypeScript becomes `user_id` in the database.
-- **`@db.Timestamp`**: Explicitly uses PostgreSQL's timestamp type for date fields.
-- **`onDelete: Cascade`**: When a user is deleted, their chats and messages are automatically deleted too.
+- **`@map("column_name")`**: Same idea for column names, so `createdAt` in TypeScript becomes `created_at` in the database.
+- **`@db.Timestamptz`**: Uses PostgreSQL's `timestamptz` (timestamp with time zone) type for date fields.
+- **`@db.Uuid`**: Stores IDs as native PostgreSQL UUID columns (instead of text).
+- **`@default(uuid(7))`**: Generates a UUIDv7 by default for IDs.
 
-The schema gives us the basic models we need: users, chats, and messages. We'll expand this in Part 5 when we add authentication tables (sessions, accounts, etc.), but this is enough to get the database layer working.
+The schema is intentionally minimal for now: just **users**. We'll add sessions (auth) and chat/message tables in later parts, but this is enough to get the database layer working.
+
+## Why UUIDv7 (instead of UUIDv4, CUID, etc.)?
+
+I naturally picked **UUIDv7** for the table ids for the following characteristics:
+
+- **Better index locality than UUIDv4**: UUIDv4 is random, so inserts land all over a btree index (more page splits and cache churn). UUIDv7 is **time-ordered**, which is friendlier to Postgres indexes at higher write volumes.
+- **Standard + interoperable**: UUIDs are universally understood across tools and languages. UUIDv7 still allows us to use native `uuid` columns which keeps things simple for integrations.
+
+CUID/ULID are also reasonable choices, but UUIDv7 hits a nice balance of **standardness** and **practical performance** for a Postgres-backed app.
+
+For a deeper dive into UUIDv7's characteristics and implementation details, check out [What May Surprise You About UUIDv7](https://habr.com/en/articles/920610/).
 
 ## Environment Configuration
 
@@ -228,6 +213,12 @@ Now push the schema to the database:
 pnpm db:push
 ```
 
+If you're iterating on the schema early (pre-production), a full reset is often the simplest path:
+
+```bash
+docker compose up -d db && DATABASE_URL="postgresql://ai_chatbot_user:ai_chatbot_password@localhost:5434/ai_chatbot?schema=public" pnpm --filter db exec prisma db push --force-reset --accept-data-loss
+```
+
 If everything worked, you can verify the tables were created by running:
 
 ```bash
@@ -267,7 +258,7 @@ pnpm db:push    # Pushes schema changes to the database
 
 - ✅ **PostgreSQL in Docker**: Isolated database environment that matches production
 - ✅ **Shared Database Package**: `packages/db` with Prisma schema and client
-- ✅ **Initial Schema**: Users, chats, and messages ready to go
+- ✅ **Initial Schema**: A minimal `User` model ready to go
 - ✅ **Type-Safe Client**: Generated Prisma client with full TypeScript support
 - ✅ **Root Scripts**: Easy database management from the monorepo root
 

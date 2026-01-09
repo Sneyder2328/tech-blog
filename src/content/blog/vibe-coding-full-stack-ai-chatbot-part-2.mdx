@@ -89,7 +89,7 @@ Better Auth has been growing rapidly in popularity, and for good reason. It's **
 For our stack, Better Auth fits nicely:
 
 - **Server-side (NestJS):** We wire it up with a direct connection to our Postgres database via Prisma. It handles session management, password hashing, and token generation out of the box.
-- **Client-side (React):** The React integration works seamlessly, and it uses **HTTP-only cookies** for session storage by default, which is ideal for web apps as it prevents CSRF attacks.
+- **Client-side (React):** The React integration works seamlessly, and it uses HTTP-only cookies for session storage by default, which is ideal for web apps as it prevents XSS attacks and, combined with other security measures like SameSite attributes and origin validation, provides comprehensive protection against CSRF attacks.
 
 So no more reinventing the wheel for every project. Authentication is one of those things where using a battle-tested library is almost always the right call. Other options worth mentioning include **Keycloak**, which is a bit overkill for this project, and **Firebase Auth**, which suffers from vendor lock-in, depends on Google not killing firebase (we all know how that goes), and is not as customizable as Better Auth.
 
