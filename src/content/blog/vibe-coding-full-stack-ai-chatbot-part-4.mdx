@@ -18,10 +18,13 @@ We're going to:
 
 By the end, you'll have a fully typed database layer ready to be consumed by our API.
 
-## Setting Up PostgreSQL with Docker
+## Setting Up PostgreSQL database
 
-First, let's get a database running. Create a `docker-compose.yml` in the root directory:
+First, we need to have some database to work with. In this case I'm using docker, so I just asked Opus 4.5 for a `docker-compose.yml` with a postgres database using postgres 18, which is the latest version of postgres by now.
 
+In case you are not familiar with `docker-compose.yml` files, this is a file that defines the services to run in the docker compose file which in our case is a postgres database, it also defines the environment variables to use, the ports to use and the volumes to use, the volumes are used to persist the data of the database in case the container is stopped or restarted otherwise the data will be lost after each restart.
+
+Here is what the file would look like:
 ```yaml
 services:
   db:
@@ -46,24 +49,24 @@ volumes:
   postgres_data:
 ```
 
-I'm using port `5434` on the host to avoid conflicts if you already have PostgreSQL running locally on the default `5432`. Feel free to change this if needed.
+I'm using port `5434` on the host to avoid conflicts since I already have another project running on the default `5432` port. Feel free to change this if needed.
 
-Start the database:
+We can now start the database with the following command:
 
 ```bash
 docker compose up -d
 ```
 
-You can verify it's running with:
+And you can verify it's running with:
 
 ```bash
 docker compose ps
 ```
-You should see the container running and healthy.
+For which we should see the container running and healthy.
 
 ## Creating the Database Package
 
-Now let's create a shared package for our database layer. This will contain the Prisma schema and client, and both the API server and any future packages can import from it.
+Now let's create a shared package for our database layer. This will contain the Prisma schema and client in a separate package so that it can be reused by the API server and any future packages.
 
 ```bash
 mkdir -p packages/db
@@ -71,7 +74,7 @@ cd packages/db
 pnpm init
 ```
 
-Update the `package.json`:
+Update the `package.json` with the prisma dependencies and the scripts to generate, push, migrate and visualize the database:
 
 ```json
 {
@@ -101,8 +104,7 @@ Update the `package.json`:
 Install the dependencies and initialize Prisma:
 
 ```bash
-pnpm add @prisma/client @prisma/adapter-pg dotenv
-pnpm add -D prisma
+pnpm install
 pnpx prisma init
 ```
 
@@ -110,7 +112,7 @@ This creates a `prisma` directory with a `schema.prisma` file.
 
 ## Defining the Schema
 
-Update `prisma/schema.prisma` with our initial schema:
+Update `prisma/schema.prisma` with our initial schema which will have a users table:
 
 ```prisma
 generator client {
@@ -133,33 +135,34 @@ model User {
 }
 ```
 
-A few things to note about this schema:
+Here are a few things to note about this schema:
 
-- **`@@map("table_name")`**: Maps the Prisma model name to a snake_case table name in the database. This keeps our TypeScript code using PascalCase while the database uses the more conventional snake_case.
+- **`@@map("table_name")`**: Maps the Prisma model name to a snake_case table name in the database. This keeps our TypeScript code using PascalCase while the database uses the more conventional snake_case. This is a convention that we will follow throughout the project, thus I will create a cursor rule to enforce and remember it.
 - **`@map("column_name")`**: Same idea for column names, so `createdAt` in TypeScript becomes `created_at` in the database.
 - **`@db.Timestamptz`**: Uses PostgreSQL's `timestamptz` (timestamp with time zone) type for date fields.
 - **`@db.Uuid`**: Stores IDs as native PostgreSQL UUID columns (instead of text).
-- **`@default(uuid(7))`**: Generates a UUIDv7 by default for IDs.
+- **`@default(uuid(7))`**: Generates a UUIDv7 by default for IDs. Will also create a cursor rule to enforce the use of UUIDv7 for ids throughout any new table we create in the project.
 
-The schema is intentionally minimal for now: just **users**. We'll add sessions (auth) and chat/message tables in later parts, but this is enough to get the database layer working.
+This is a very minimal schema for now, but it is enough to get the database layer working.
 
 ## Why UUIDv7 (instead of UUIDv4, CUID, etc.)?
 
-I naturally picked **UUIDv7** for the table ids for the following characteristics:
+I want to take a moment to explain why I picked UUIDv7 for the table ids since many of you might be more familiar with UUIDv4, sequential integer ids, among others.
+
+UUIDv7 represents a modern approach to identifier generation. Introduced in 2024 via [RFC 9562](https://www.rfc-editor.org/rfc/rfc9562.html), this UUID version generates identifiers based on the current timestamp combined with random data. Here are its key characteristics:
 
 - **Better index locality than UUIDv4**: UUIDv4 is random, so inserts land all over a btree index (more page splits and cache churn). UUIDv7 is **time-ordered**, which is friendlier to Postgres indexes at higher write volumes.
 - **Standard + interoperable**: UUIDs are universally understood across tools and languages. UUIDv7 still allows us to use native `uuid` columns which keeps things simple for integrations.
 
-CUID/ULID are also reasonable choices, but UUIDv7 hits a nice balance of **standardness** and **practical performance** for a Postgres-backed app.
-
-For a deeper dive into UUIDv7's characteristics and implementation details, check out [What May Surprise You About UUIDv7](https://habr.com/en/articles/920610/).
+For a deeper dive into UUIDv7's characteristics and implementation details, I would recommend reading [What May Surprise You About UUIDv7](https://habr.com/en/articles/920610/) which is a great article that explains the why and how of UUIDv7.
 
 ## Environment Configuration
 
-Create a `.env` file in the db package:
+For setting up the environment variables for the database, we will create a `.env` file in the db package with the following variables:
 
 ```env
 DATABASE_URL="postgresql://ai_chatbot_user:ai_chatbot_password@localhost:5434/ai_chatbot"
+# This is the connection string to the database, it is a standard postgresql connection string, update values if needed.
 
 # Database connection pool settings (optional - defaults provided)
 DB_MAX_CONNECTIONS=5
@@ -167,8 +170,6 @@ DB_MIN_CONNECTIONS=1
 DB_CONNECTION_TIMEOUT=10000
 DB_IDLE_TIMEOUT=60000
 ```
-
-The pool configuration variables are optional since the code provides sensible defaults. You can adjust these based on your deployment environment and expected load.
 
 ## Creating the Database Client
 
@@ -207,29 +208,17 @@ This creates the typed client in `src/generated/prisma/`. You should add this di
 echo "src/generated" >> .gitignore
 ```
 
-Now push the schema to the database:
+Run migrations to create the tables in the database:
 
 ```bash
-pnpm db:push
+pnpm db:migrate
 ```
 
-If you're iterating on the schema early (pre-production), a full reset is often the simplest path:
-
-```bash
-docker compose up -d db && DATABASE_URL="postgresql://ai_chatbot_user:ai_chatbot_password@localhost:5434/ai_chatbot?schema=public" pnpm --filter db exec prisma db push --force-reset --accept-data-loss
-```
-
-If everything worked, you can verify the tables were created by running:
-
-```bash
-pnpm db:studio
-```
-
-This opens Prisma Studio in your browser where you can see the empty tables and their structure.
+This will create the tables in the database.
 
 ## Adding Root Scripts
 
-Update the root `package.json` to include database scripts:
+Now we should update the root `package.json` of the monorepo to include database scripts and make them available from the root of the project:
 
 ```json
 {
@@ -250,8 +239,7 @@ Update the root `package.json` to include database scripts:
 Now you can run database commands from the root:
 
 ```bash
-pnpm db:studio  # Opens Prisma Studio
-pnpm db:push    # Pushes schema changes to the database
+pnpm db:studio  # Opens Prisma Studio in the browser to visualize the database schema and data
 ```
 
 ## What We've Accomplished
