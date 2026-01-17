@@ -10,17 +10,17 @@ This is Part 5 of the tutorial series. If you haven't read the previous parts, I
 
 In Parts 1–4, we set up the foundation mostly by hand: the monorepo structure, tooling, apps, and database. Now it's time to actually *vibe code*. From this point forward, I'll be showing you the prompts I use, which AI model I'm working with, summarized results of what the AI generated and provide a link to a branch on github with the snapshot of the code at this point.
 
-The goal for this part: **implement authentication with Better Auth** allowing for signup and login with email/password, enable Google OAuth, handle session management, and protected routes in the backend.
+The goal for this part: **implement authentication with Better Auth** allowing for signup and login with email/password, enable Google OAuth, handle session management, and create protected routes in the backend.
 
 ## The Vibe Coding Workflow
 
 Here's how I'll structure each section from now on:
 
-1. **🎯 Goal**: What we're trying to accomplish
-2. **💬 Prompt**: The actual prompt I give to the AI
-3. **🤖 Model**: Which model I'm using (I'll be switching between Claude Opus 4 and GPT 5.2 depending on the task)
-4. **📝 Summary**: What the AI generated, summarized
-5. **🔧 Adjustments**: Any manual tweaks I made
+1. **Goal**: What we're trying to accomplish
+2. **Prompt**: The actual prompt I give to the AI
+3. **Model**: Which model I'm using (I'll be switching between Claude Opus 4 and GPT 5.2 depending on the task)
+4. **Summary**: What the AI generated, summarized
+5. **Adjustments**: Any manual tweaks I made
 
 Let's get into it.
 
@@ -30,7 +30,7 @@ Let's get into it.
 
 Before we start coding, we need OAuth credentials from Google. This is a manual step — no AI needed.
 
-1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+1. Go to <a href="https://console.cloud.google.com/" target="_blank">Google Cloud Console</a>
 2. Create a new project or select an existing one
 3. Navigate to **APIs & Services > Credentials**
 4. Click **Create Credentials > OAuth client ID**
@@ -43,106 +43,29 @@ Before we start coding, we need OAuth credentials from Google. This is a manual 
 
 ## Step 1: Update the Database Schema for Auth
 
-**🎯 Goal**: Add the tables Better Auth needs (sessions, accounts, verifications) and update the User model with auth-related fields.
+**Goal**: Add the tables Better Auth needs (sessions, accounts, verifications) and update the User model with auth-related fields.
 
-**💬 Prompt**:
+**Prompt**:
 > I need to update my Prisma schema to support Better Auth. Right now I only have a minimal `User` model. Add the tables Better Auth requires for email/password auth and OAuth providers (in my case i will be using Google OAuth but want to keep the schema flexible for other providers) and update the User model with auth-related fields.
 >
 > Use the same conventions I have (`@@map` for snake_case table names, `@map` for column names), **UUIDv7** for IDs (`@default(uuid(7)) @db.Uuid`), and use **PostgreSQL `timestamptz`** (`@db.Timestamptz`) for timestamps.
 
-**🤖 Model**: GPT 5.2 Extra High Reasoning (via Cursor)
+**Model**: GPT 5.2 Extra High Reasoning
 
-**📝 Summary**: The AI updated `packages/db/prisma/schema.prisma` with:
+**Summary**: The AI updated `packages/db/prisma/schema.prisma` with:
 
-- **User model** — Added `emailVerified`, `image` fields and relations to `Session`, `Account` (IDs are UUIDv7)
-- **Session model** — New model with `token`, `expiresAt`, `ipAddress`, `userAgent`, `createdAt`, `updatedAt` (timestamps are `timestamptz`)
-- **Account model** — New model for OAuth providers and password storage with `providerId`, `accountId`, tokens, `password` field (plus a composite unique constraint)
+- **User model** — Added `emailVerified`, `image` fields and relations to `Session`, `Account`
+- **Session model** — New model with `token`, `expiresAt`, `ipAddress`, `userAgent`
+- **Account model** — New model for OAuth providers and password storage with `providerId`, `accountId`, tokens, `password` field
 - **Verification model** — New model for email verification and password reset tokens
 
-**🔧 Adjustments**: None needed. The AI correctly followed my existing conventions.
-
-Here’s the resulting schema (showing the key auth tables):
-
-```prisma
-model User {
-  id            String   @id @default(uuid(7)) @db.Uuid
-  email         String   @unique
-  name          String?
-  emailVerified Boolean  @default(false) @map("email_verified")
-  image         String?
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz
-
-  sessions Session[]
-  accounts Account[]
-
-  @@map("users")
-}
-
-model Session {
-  id        String   @id @default(uuid(7)) @db.Uuid
-  token     String   @unique
-  userId    String   @map("user_id") @db.Uuid
-  expiresAt DateTime @map("expires_at") @db.Timestamptz
-  ipAddress String?  @map("ip_address")
-  userAgent String?  @map("user_agent")
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@map("sessions")
-}
-
-model Account {
-  id                    String    @id @default(uuid(7)) @db.Uuid
-  accountId             String    @map("account_id")
-  providerId            String    @map("provider_id")
-  userId                String    @map("user_id") @db.Uuid
-  accessToken           String?   @map("access_token")
-  refreshToken          String?   @map("refresh_token")
-  idToken               String?   @map("id_token")
-  accessTokenExpiresAt  DateTime? @map("access_token_expires_at") @db.Timestamptz
-  refreshTokenExpiresAt DateTime? @map("refresh_token_expires_at") @db.Timestamptz
-  scope                 String?
-  password              String?
-  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamptz
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([providerId, accountId])
-  @@map("accounts")
-}
-
-model Verification {
-  id         String   @id @default(uuid(7)) @db.Uuid
-  identifier String
-  value      String
-  expiresAt  DateTime @map("expires_at") @db.Timestamptz
-  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz
-
-  @@map("verifications")
-}
-```
-
-After the schema update:
-
-```bash
-pnpm db:generate
-pnpm db:push
-```
+The schema includes standard Better Auth tables: **User** (with email verification and profile fields), **Session** (for managing user sessions with IP tracking), **Account** (for OAuth providers and password storage), and **Verification** (for email verification tokens).
 
 ---
 
 ## Step 2: Install Better Auth
 
-**🎯 Goal**: Add Better Auth to both the API and web packages.
-
-**📋 Manual Steps**:
-
-Add the `better-auth` dependency to both packages:
+Add the `better-auth` dependency to the api and web packages:
 
 ```bash
 # In apps/api
@@ -156,9 +79,9 @@ pnpm add better-auth
 
 ## Step 3: Configure Better Auth on the Backend
 
-**🎯 Goal**: Set up Better Auth with Prisma adapter, email/password auth, and Google OAuth in our NestJS app.
+**Goal**: Set up Better Auth with Prisma adapter, email/password auth, and Google OAuth in our NestJS app.
 
-**💬 Prompt**:
+**Prompt**:
 > Set up Better Auth in my NestJS app at apps/api. I need:
 > - Prisma adapter using my db package
 > - Email/password authentication enabled
@@ -168,9 +91,9 @@ pnpm add better-auth
 > 
 > Create the auth configuration, a NestJS module, and a controller that handles all /api/auth/* routes. Also update main.ts for CORS and app.module.ts to include the auth module.
 
-**🤖 Model**: GPT 5.2 Extra High Reasoning
+**Model**: GPT 5.2 High Reasoning
 
-**📝 Summary**: The AI created several files:
+**Summary**: The AI created several files:
 
 | File | Purpose |
 |------|---------|
@@ -196,9 +119,9 @@ Then ran `pnpm install` from the root.
 
 Right after Step 3, I hit a runtime issue: the API was consuming `packages/db` directly from TypeScript source (`src/index.ts`), and Node couldn’t reliably resolve Prisma’s generated client imports in that setup.
 
-So I asked **GPT 5.2 Extra High** to make `packages/db` a **buildable package** that outputs JavaScript and type declarations, and then had the API consume that built output.
+So I asked **GPT 5.2 High** to make `packages/db` a **buildable package** that outputs JavaScript and type declarations, and then had the API consume that built output.
 
-**📝 What we did (short summary):**
+**What we did:**
 
 - **Created a shared TS config package** (`packages/tsconfig`) so apps/packages can reuse consistent compiler settings.
 - **Updated Prisma generation** so the generated client uses `.js` import specifiers (more compatible once compiled).
@@ -211,38 +134,34 @@ So I asked **GPT 5.2 Extra High** to make `packages/db` a **buildable package** 
 
 ## Step 4: Environment Variables
 
-**🎯 Goal**: Create the `.env` file for the API with all required secrets.
-
-**💬 Prompt**:
-> Create a .env file for apps/api with the environment variables needed for Better Auth, the database connection, Google OAuth, and the client URL
-
-**🤖 Model**: Claude Sonnet 4
-
-**📝 Summary**: Created `apps/api/.env`:
+Create `apps/api/.env` with the following environment variables:
 
 ```env
 DATABASE_URL="postgresql://ai_chatbot_user:ai_chatbot_password@localhost:5434/ai_chatbot"
-BETTER_AUTH_SECRET="[generated-secret]"
+BETTER_AUTH_SECRET="your-random-secret-here"
 BETTER_AUTH_URL="http://localhost:3000"
 CLIENT_URL="http://localhost:5173"
-GOOGLE_CLIENT_ID="[from-google-console]"
-GOOGLE_CLIENT_SECRET="[from-google-console]"
+GOOGLE_CLIENT_ID="your-google-client-id"
+GOOGLE_CLIENT_SECRET="your-google-client-secret"
 ```
 
-**🔧 Adjustments**: Generated a proper secret with `openssl rand -base64 32` and added my actual Google OAuth credentials.
+**Setup Instructions**:
+1. Generate a secure random secret: `openssl rand -base64 32`
+2. Use Google OAuth credentials created before in the [Google Cloud Console](https://console.cloud.google.com/)
+3. Update the placeholder values with your actual credentials
 
 ---
 
 ## Step 5: Create the Auth Client for React
 
-**🎯 Goal**: Set up the Better Auth client in the React app.
+**Goal**: Set up the Better Auth client in the React app.
 
-**💬 Prompt**:
+**Prompt**:
 > Create the Better Auth client for my React app at apps/web. Export the auth functions (signIn, signUp, signOut, useSession) that I'll need for the UI.
 
-**🤖 Model**: Claude Opus 4.5
+**Model**: Claude Opus 4.5
 
-**📝 Summary**: Created `src/lib/auth-client.ts`:
+**Summary**: Created `src/lib/auth-client.ts`:
 
 ```typescript
 import { createAuthClient } from "better-auth/react"
@@ -264,9 +183,9 @@ VITE_API_URL=http://localhost:3000
 
 ## Step 6: Build the Auth UI
 
-**🎯 Goal**: Create login and signup pages with a clean, modern design.
+**Goal**: Create login and signup pages with a clean, modern design.
 
-**💬 Prompt**:
+**Prompt**:
 > Create login and signup pages for my React app. Requirements:
 > - Clean, minimal design with dark mode support
 > - Use Tailwind CSS for styling, following mobile-first design principles
@@ -282,16 +201,7 @@ VITE_API_URL=http://localhost:3000
 >
 > Also create a design system base in Tailwind CSS with custom color palette, typography scale, spacing values, and component-specific design tokens.
 
-**🤖 Model**: Claude Opus 4.5 Thinking (switched for UI work — it tends to produce cleaner designs than GPT 5.2)
-
-**📝 Summary**: The AI created:
-
-| File | Purpose |
-|------|---------|
-| `src/components/ui/button.tsx` | Reusable button with variants (default, outline, ghost) and sizes |
-| `src/components/ui/input.tsx` | Styled input component with dark mode support |
-| `src/pages/login.tsx` | Login page with email/password form and Google OAuth |
-| `src/pages/signup.tsx` | Signup page with name, email, password fields |
+**Model**: Claude Opus 4.5 Thinking (switched for UI work as it tends to produce cleaner designs than GPT 5.2)
 
 Key features in the generated UI:
 - Neutral color palette that works in both light and dark modes
@@ -300,7 +210,7 @@ Key features in the generated UI:
 - Google logo as inline SVG
 - Responsive layout centered on screen
 
-**🔧 Adjustments**: 
+**Adjustments**: 
 - Named the AI Chatbot Platform as 'Ask Cosmos'.
 - Asked the AI to generate a logo for it and use it as favicon.
 
@@ -308,18 +218,18 @@ Key features in the generated UI:
 
 ## Step 7: Wire Up the App Component
 
-**🎯 Goal**: Update the main App component to show login when unauthenticated and a welcome screen when authenticated.
+**Goal**: Update the main App component to show login when unauthenticated and a welcome screen when authenticated.
 
-**💬 Prompt**:
+**Prompt**:
 > Update src/App.tsx to:
 > - Use the useSession hook to check auth state
 > - Show a loading spinner while checking session
 > - Show the LoginPage if not authenticated
 > - Show a welcome message with the user's name and a sign out button if authenticated
 
-**🤖 Model**: Claude Sonnet 4
+**Model**: Claude Sonnet 4
 
-**📝 Summary**: Updated `src/App.tsx` to conditionally render based on session state:
+**Summary**: Updated `src/App.tsx` to conditionally render based on session state:
 
 - `isPending` → Loading spinner
 - `!session` → `<LoginPage />`
@@ -329,14 +239,14 @@ Key features in the generated UI:
 
 ## Step 8: Create an Auth Guard for Protected Endpoints
 
-**🎯 Goal**: Create a NestJS guard that protects API routes and attaches the session to the request.
+**Goal**: Create a NestJS guard that protects API routes and attaches the session to the request.
 
-**💬 Prompt**:
+**Prompt**:
 > Create a NestJS guard that checks if the user is authenticated using Better Auth. If not authenticated, throw UnauthorizedException. If authenticated, attach the session to the request object so controllers can access it.
 
-**🤖 Model**: GPT 5.2 Extra High Reasoning
+**Model**: GPT 5.2 High Reasoning
 
-**📝 Summary**: Created `src/auth/auth.guard.ts`:
+**Summary**: Created `src/auth/auth.guard.ts`:
 
 ```typescript
 @Injectable()
