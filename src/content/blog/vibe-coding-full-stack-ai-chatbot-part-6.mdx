@@ -6,15 +6,29 @@ tags: ["tutorial", "ai", "chatbot", "llm", "full-stack", "cursor", "typescript",
 heroImage: "/images/vibe-coding-full-stack-ai-chatbot-part-6-hero-image.jpg"
 ---
 
-This is Part 6 of the tutorial series. If you haven’t read the earlier parts, you can start with [Part 1: Introduction](https://blog.sneyderangulo.com/blog/vibe-coding-full-stack-ai-chatbot-part-1), or read the previous part [Part 5: Authentication with Better Auth](https://blog.sneyderangulo.com/blog/vibe-coding-full-stack-ai-chatbot-part-5).
+This is Part 6 of the tutorial series. If you haven't read the earlier parts, you can start with [Part 1: Introduction](https://blog.sneyderangulo.com/blog/vibe-coding-full-stack-ai-chatbot-part-1), or read the previous part [Part 5: Authentication with Better Auth](https://blog.sneyderangulo.com/blog/vibe-coding-full-stack-ai-chatbot-part-5).
 
 In Part 5, we set up authentication with Better Auth (email/password + Google OAuth). Now we need the wire that will allow our React frontend to call the NestJS backend and get the data we need.
 
 As discussed in Part 2, tRPC is the perfect tool to help us achieve our goal of having end-to-end type safety between our React frontend and NestJS backend.
 
+## A shift in prompting strategy
+
+Up until now, I've been breaking down each feature into multiple smaller prompts and steps. This approach worked well for demonstrating the thought process and making it easier to follow along.
+
+However, I've noticed that **GPT 5.2 with extra high reasoning** has become remarkably precise, even when given large context windows and complex multi-part instructions. The model handles comprehensive prompts exceptionally well, maintaining coherence across all requirements without losing track of details.
+
+**From this part onwards, I'll be using single, detailed prompts** that describe the entire feature we want to build. This approach:
+- Better reflects how I actually work with these models now
+- Reduces back-and-forth iterations
+- Lets the AI see the full picture and make better architectural decisions
+- Takes advantage of the model's high reasoning capabilities
+
+Let's see this in action with our tRPC setup.
+
 ## Goal for this part
 
-By the end of this part we’ll have:
+By the end of this part we'll have:
 
 - tRPC **routers and procedures defined in `apps/api`** (Nest owns the API surface)
 - A small shared `@ai-chatbot/trpc` **helpers package** (router + public/protected procedures)
@@ -25,123 +39,80 @@ By the end of this part we’ll have:
 
 ---
 
-## Step 1: Add a minimal `Chat` model (will be used to store our chats and create our first protected procedures)
+## The prompt
 
-Goal: Add a `Chat` table so `chat.create` and `chat.list` can persist data.
+Here's the single comprehensive prompt I used to implement the entire tRPC setup:
 
-Prompt:
-> Update my Prisma schema to add a `Chat` model. Requirements:
+> I want to add end-to-end type-safe API communication between my React frontend and NestJS backend using tRPC. Here's everything I need:
+>
+> **1. Prisma Schema Update**
+> Update my Prisma schema to add a `Chat` model:
 > - Use UUIDv7 for chat IDs
 > - Follow my mapping conventions (`@@map` for snake_case table names, `@map` for column names)
 > - Use PostgreSQL `timestamptz` (`@db.Timestamptz`) for timestamps
 > - Chat belongs to a User (one user has many chats)
 > - Add an index on `user_id`
+> - Keep it minimal: id, userId, title, createdAt, updatedAt
 >
-> Keep it minimal: id, userId, title, createdAt, updatedAt.
-
-Model: GPT-5.2 (high reasoning)
-
-Summary:
-- Added a `Chat` model under `packages/db/prisma/schema.prisma`
-
-Adjustments:
-- This was pretty simple, so no adjustments were needed.
----
-
-## Step 2: Create a shared tRPC helpers package (`packages/trpc`)
-
-Goal: This package is for the shared, typed tRPC setup, so we can reuse it in other backend packages later on if needed.
-
-Prompt:
-> Create a new buildable workspace package at `packages/trpc` called `@ai-chatbot/trpc`.
-> Requirements:
-> - Compile to `dist/` (CommonJS is fine, consistent with our other backend packages)
+> **2. Shared tRPC Helpers Package**
+> Create a new buildable workspace package at `packages/trpc` called `@ai-chatbot/trpc`:
+> - Compile to `dist/` (CommonJS, consistent with our other backend packages)
 > - Export `router`, `publicProcedure`, and `protectedProcedure`
-> - Export `TrpcContext` and `ProtectedContext`
+> - Export `TrpcContext` and `ProtectedContext` types
 > - `protectedProcedure` must throw `UNAUTHORIZED` if there is no authenticated user in context
-
-Model: GPT-5.2 (high reasoning)
-
-Summary:
-- Created a buildable `@ai-chatbot/trpc` package that centralizes our tRPC + auth middleware
-- Created the directory structure for `packages/trpc` with `context.ts`, `trpc.ts`, and `index.ts`.
-- Defined `AuthUser`, `TrpcContext`, and `ProtectedContext` types which will be used to create the context for our tRPC procedures and will contain the `db` and `user` instances.
-- Initialized tRPC and defined `router`, `publicProcedure`, and `protectedProcedure` with auth middleware.
-
----
-
-## Step 3: Define routers in NestJS (apps/api) and mount `/api/trpc`
-
-Goal:
-- Define routers/procedures in `apps/api` (**Nest owns the API surface**)
-- Mount tRPC at `/api/trpc`
-- Create a context per request that includes:
-  - `db` (Prisma client from our `db` package)
-  - `user` (from Better Auth cookies)
-- Export `AppRouter` types for the frontend from `@ai-chatbot/api/trpc`
-
-Prompt:
-> In apps/api, create a minimal tRPC router with:
-> - `chat.create` and `chat.list` as protected procedures (Prisma-backed)
-> - a `createContext` that injects `db` and resolves `user` from Better Auth cookies
-> Then mount it at `/api/trpc` in `main.ts`.
+> - Define `AuthUser`, `TrpcContext`, and `ProtectedContext` types for the context (containing `db` and `user` instances)
 >
-> Finally, export `AppRouter` types from the API package so the web app can import them.
-
-Model: GPT-5.2 (high reasoning)
-
-Summary:
-- Added chat procedures + app router inside `apps/api/src/trpc`
-- Added a typed `createContext`
-- Mounted `createExpressMiddleware` in `main.ts`
-- Exported `AppRouter` types via `@ai-chatbot/api/trpc`
-
----
-
-## Step 4: Create the typed tRPC client in React (TanStack Query)
-
-Goal: Make the web app call `/api/trpc` with:
-- end-to-end types from `AppRouter`
-- cookies enabled (so Better Auth sessions work)
-
-Prompt:
-> In apps/web, set up tRPC + TanStack Query.
-> Requirements:
+> **3. NestJS Router Setup**
+> In `apps/api`, create a tRPC router with:
+> - `chat.create` and `chat.list` as protected procedures (Prisma-backed)
+> - A `createContext` that injects `db` (Prisma client) and resolves `user` from Better Auth cookies
+> - Mount tRPC at `/api/trpc` in `main.ts` using `createExpressMiddleware`
+> - Export `AppRouter` types from the API package so the web app can import them via `@ai-chatbot/api/trpc`
+>
+> **4. React Client Setup**
+> In `apps/web`, set up tRPC + TanStack Query:
 > - Add `@ai-chatbot/api` as a workspace devDependency (so TS can import `AppRouter`)
 > - Create a `trpc` helper typed with `AppRouter` from `@ai-chatbot/api/trpc`
 > - Create a QueryClient
 > - Use `httpBatchLink` pointing at `${VITE_API_URL}/api/trpc`
 > - Ensure cookies are included (`credentials: "include"`)
 > - Wrap the app in providers in `main.tsx`
+>
+> **5. UI Component**
+> Create a `ChatsPanel` component that:
+> - Calls `trpc.chat.list.useQuery()` to list chats
+> - Calls `trpc.chat.create.useMutation()` to create new chats
+> - Invalidates `chat.list` on successful creation
+> - Shows loading and error states
+> - Uses the existing `Button` styling
+> - Plug it into the authenticated branch of `App.tsx`
 
-Model: GPT-5.2 High Reasoning
+Model: GPT-5.2 (extra high reasoning)
 
-Summary:
+## What the AI implemented
+
+The AI successfully implemented all five parts in a single pass:
+
+**Prisma Schema:**
+- Added a `Chat` model under `packages/db/prisma/schema.prisma` with all the specified conventions
+
+**Shared tRPC Package (`packages/trpc`):**
+- Created the directory structure with `context.ts`, `trpc.ts`, and `index.ts`
+- Defined `AuthUser`, `TrpcContext`, and `ProtectedContext` types
+- Initialized tRPC and defined `router`, `publicProcedure`, and `protectedProcedure` with auth middleware
+
+**NestJS Router (`apps/api`):**
+- Added chat procedures + app router inside `apps/api/src/trpc`
+- Added a typed `createContext`
+- Mounted `createExpressMiddleware` in `main.ts`
+- Exported `AppRouter` types via `@ai-chatbot/api/trpc`
+
+**React Client (`apps/web`):**
 - Added `src/lib/trpc.ts`
 - Updated `src/main.tsx` to include QueryClientProvider + trpc.Provider
 
----
-
-## Step 5: Call our first protected procedures from the UI
-
-Goal: When a user is signed in, show a tiny “Chats” panel:
-- list chats
-- create a new chat
-- invalidate the list
-
-Prompt:
-> Create a `ChatsPanel` component that:
-> - calls `trpc.chat.list.useQuery()`
-> - calls `trpc.chat.create.useMutation()`
-> - invalidates `chat.list` on success
-> - shows loading and error states
-> - uses the existing `Button` styling
-> - plug it into the authenticated branch of `App.tsx`
-
-Model: Claude Opus 4.5
-
-Summary:
-- Implemented `ChatsPanel` component to list chats and create new ones using tRPC hooks (`trpc.chat.list.useQuery`, `trpc.chat.create.useMutation`).
+**UI Component:**
+- Implemented `ChatsPanel` component to list chats and create new ones using tRPC hooks
 
 At this point we should be able to:
 - Log in / Sign up
@@ -163,7 +134,7 @@ Run `pnpm dev`
 
 3. In the browser:
 - Sign in
-- Click “New chat”
+- Click "New chat"
 - Refresh the page (list should still show, because data is persisted)
 
 ---
@@ -187,9 +158,9 @@ I also asked the AI to do a code review of the codebase, fixed minor issues it f
 
 ## Next steps
 
-We can create chats, but we still don’t have an actual “chatbot”.
+We can create chats, but we still don't have an actual "chatbot".
 
-In Part 7, we’ll build the core chat experience:
+In Part 7, we'll build the core chat experience:
 - Message model + persistence
 - A chat page UI
 - Sending a message to the backend and saving it

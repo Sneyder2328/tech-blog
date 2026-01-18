@@ -23,17 +23,17 @@ tags:
 heroImage: "/images/vibe-coding-full-stack-ai-chatbot-part-7-hero-image.jpg"
 ---
 
-This is Part 7 of the tutorial series. If you haven’t read the earlier parts, start with [Part 1: Introduction](https://blog.sneyderangulo.com/blog/vibe-coding-full-stack-ai-chatbot-part-1). If you’re already following along, the previous part is [Part 6: End-to-End Type Safety with tRPC](https://blog.sneyderangulo.com/blog/vibe-coding-full-stack-ai-chatbot-part-6).
+This is Part 7 of the tutorial series. If you haven't read the earlier parts, start with [Part 1: Introduction](https://blog.sneyderangulo.com/blog/vibe-coding-full-stack-ai-chatbot-part-1). If you're already following along, the previous part is [Part 6: End-to-End Type Safety with tRPC](https://blog.sneyderangulo.com/blog/vibe-coding-full-stack-ai-chatbot-part-6).
 
 In Part 6, we got working the wiring between the React frontend and the NestJS backend with tRPC, added the authentication guard to the backend and got some first working procedures in the backend.
 
-But we still don’t have an actual chatbot experience. We can create chats, yet there’s no place to write messages, no message history, and nothing for an LLM to read as context.
+But we still don't have an actual chatbot experience. We can create chats, yet there's no place to write messages, no message history, and nothing for an LLM to read as context.
 
-That’s what we’ll build in this part.
+That's what we'll build in this part.
 
 ## Goal for this part
 
-By the end of Part 7 we’ll have:
+By the end of Part 7 we'll have:
 
 - A **Message** table (Prisma) associated to a Chat
 - API procedures to **list messages** and **create user messages**
@@ -41,142 +41,77 @@ By the end of Part 7 we’ll have:
   - left sidebar with chats
   - main panel that shows the selected chat messages
   - a message composer at the bottom
-- A tiny but important piece of future-proofing: chats should be sortable by “last activity”, not just chat creation time
+- A tiny but important piece of future-proofing: chats should be sortable by "last activity", not just chat creation time
 
-In Part 8, we’ll finally connect an LLM provider (OpenRouter) and stream assistant responses back to the UI.
+In Part 8, we'll finally connect an LLM provider (OpenRouter) and stream assistant responses back to the UI.
 
 ---
 
-## Step 1: Add a Message model (and track chat activity)
+## The prompt
 
-Goal: Persist the raw material of any chatbot: messages.
+As mentioned in Part 6, I'm now using single comprehensive prompts with GPT 5.2's extra high reasoning. Here's the prompt I used to implement message persistence and the chat UI:
 
-At a minimum, messages need:
-
-- which chat they belong to
-- which role they represent (user vs assistant)
-- their content
-- timestamps
-
-And since our sidebar will eventually sort by last activity, we also want an explicit `lastMessageAt` on the chat record. Prisma’s `updatedAt` is not automatically bumped when you insert related rows (messages), so we update last activity ourselves.
-
-Prompt:
-> Update my Prisma schema to add a `Message` model for chats.
+> I want to build the core chat experience for my chatbot app. This includes message persistence and a real chat UI with routing. Here's everything I need:
 >
-> Requirements:
-> - Use UUIDv7 for message ids.
-> - A Message belongs to a Chat.
-> - Add `role` (user/assistant/system/tool) and `content` fields.
-> - Use `timestamptz` timestamps and follow my snake_case mapping conventions.
-> - Add indexes for the foreign keys.
+> **1. Prisma Schema Update - Message Model**
+> Update my Prisma schema to add a `Message` model for chats:
+> - Use UUIDv7 for message IDs
+> - A Message belongs to a Chat
+> - Add `role` (user/assistant/system/tool) as an enum and `content` fields
+> - Use `timestamptz` timestamps and follow my snake_case mapping conventions
+> - Add indexes for the foreign keys
+> - Keep it minimal for now (we'll add attachments, retries, and richer content payloads later)
 >
-> Also update the `Chat` model to include `lastMessageAt` (nullable), mapped to `last_message_at`.
-> We will update it whenever we insert a message so chat list sorting can reflect activity.
+> Also update the `Chat` model to include `lastMessageAt` (nullable), mapped to `last_message_at`. We will update it whenever we insert a message so chat list sorting can reflect activity. Note: Prisma's `updatedAt` is not automatically bumped when you insert related rows (messages), so we need to update last activity ourselves.
 >
-> Keep it minimal for now (we’ll add attachments, retries, and richer content payloads later).
+> **2. tRPC Message Procedures**
+> In `apps/api`, add a tRPC router for messages:
+> - `message.list` is a protected procedure that takes `{ chatId }` and returns the latest messages for that chat in chronological order
+> - `message.create` is a protected procedure that takes `{ chatId, content }` and creates a user message
+> - Enforce chat ownership: reject if the chat doesn't belong to the authenticated user
+> - When creating a message, update `Chat.lastMessageAt` to now
+> - Return timestamps as ISO strings (same as our `chat` procedures)
+> - Add the router into the main `appRouter`
+>
+> **3. Chat UI with TanStack Router**
+> In `apps/web`, implement the core chat UI with routing:
+> - Use TanStack Router with this route structure:
+>   - `/` redirects to the newest chat (or a welcome empty state)
+>   - `/chats/:chatId` is the chat view
+> - Layout: left sidebar (chats) + main panel (messages)
+> - Sidebar:
+>   - Shows chat list (tRPC)
+>   - "New chat" button
+>   - Clicking a chat navigates to `/chats/:chatId`
+> - Chat view:
+>   - Loads `message.list` for the current chat
+>   - Renders messages in order (simple bubbles is fine)
+>   - Includes a message composer at the bottom
+> - Composer:
+>   - Textarea + send button
+>   - Enter sends, Shift+Enter inserts newline
+>   - Calls `message.create` then clears input
+>   - Invalidates message list and chat list on success
+> - Keep styling consistent with the existing Tailwind design system and shadcn-style Button/Input components
 
-Model: GPT-5.2 Extra High Reasoning
+Model: GPT-5.2 (extra high reasoning)
 
-Summary:
+## What the AI implemented
+
+The AI successfully implemented all three parts in a single pass:
+
+**Prisma Schema:**
 - Added a `Message` model related to `Chat`
 - Added `lastMessageAt` to `Chat`
 - Added enums to keep roles strongly typed
 
-After updating the schema:
-
-```bash
-pnpm db:migrate
-pnpm db:generate
-```
-
----
-
-## Step 2: Add message procedures to tRPC (list + create)
-
-Goal: Create the minimal API we need for the chat UI.
-
-We want:
-
-- `message.list(chatId)` to render the chat history
-- `message.create({ chatId, content })` to persist user input
-
-Two important details:
-
-1. **Authorization**: A user should only access messages for chats they own.
-2. **Sorting**: Messages should always be returned in chronological order.
-
-Prompt:
-> In `apps/api`, add a tRPC router for messages.
->
-> Requirements:
-> - `message.list` is a protected procedure that takes `{ chatId }` and returns the latest messages for that chat
-> - `message.create` is a protected procedure that takes `{ chatId, content }` and creates a user message
-> - Enforce chat ownership: reject if the chat doesn’t belong to the authenticated user
-> - When creating a message, update `Chat.lastMessageAt` to now
-> - Return timestamps as ISO strings (same as our `chat` procedures)
->
-> Add the router into the main `appRouter`.
-
-Model: GPT-5.2 High Reasoning
-
-Summary:
+**tRPC Message Procedures:**
 - Added `apps/api/src/trpc/routers/message.ts`
 - Updated `apps/api/src/trpc/router.ts` to mount `message`
 - Enforced ownership by loading the Chat first, scoped to `userId`
 - Updated `lastMessageAt` on message creation so chat sorting will reflect activity
 
----
-
-## Step 3: Build the first real chat UI (sidebar + chat panel + composer)
-
-Goal: Transform the current “ChatsPanel demo” into a real chat experience.
-
-At the end of Part 6, the authenticated UI only shows a list and a “New chat” button. In this part, we turn that into:
-
-- a left sidebar with chat list and new chat button
-- a main panel to show messages for the selected chat
-- a message composer fixed to the bottom
-
-### Routing decision
-
-We installed TanStack Router in the early setup, but we haven’t used it yet.
-
-For a chatbot UI, routing is worth it even early:
-
-- `/chats/:chatId` deep-links directly to a conversation
-- browser back/forward “just works”
-- the state stays consistent across refreshes
-
-So in this part, we’ll introduce TanStack Router and create a minimal route structure:
-
-- `/` redirects to the newest chat (or a welcome empty state)
-- `/chats/:chatId` is the chat view
-
-Prompt:
-> In `apps/web`, implement the core chat UI with routing.
->
-> Requirements:
-> - Use TanStack Router
-> - Layout: left sidebar (chats) + main panel (messages)
-> - Sidebar:
->   - shows chat list (tRPC)
->   - “New chat” button
->   - clicking a chat navigates to `/chats/:chatId`
-> - Chat view:
->   - loads `message.list` for the current chat
->   - renders messages in order (simple bubbles is fine)
->   - includes a message composer at the bottom
-> - Composer:
->   - textarea + send button
->   - Enter sends, Shift+Enter inserts newline
->   - calls `message.create` then clears input
->   - invalidates message list and chat list on success
->
-> Keep styling consistent with the existing Tailwind design system and shadcn-style Button/Input components.
-
-Model: Claude Opus 4.5 Thinking
-
-Summary:
+**Chat UI with Routing:**
 - Added TanStack Router wiring
 - Created a sidebar component that reuses the existing `chat.list` query
 - Built a `ChatPage` that lists messages and includes a message composer
@@ -192,6 +127,13 @@ Files created/updated (high level):
 | `src/pages/chat.tsx` | Message list + composer |
 | `src/components/message-composer.tsx` | New message input + send logic |
 | `src/App.tsx` | Auth gate + app shell |
+
+After updating the schema, run:
+
+```bash
+pnpm db:migrate
+pnpm db:generate
+```
 
 ---
 
@@ -226,10 +168,10 @@ pnpm dev
 
 ---
 
-## What we’ve accomplished
+## What we've accomplished
 
 - Added a **Message** model and relations to Chat
-- Added `Chat.lastMessageAt` so “recency” can be accurate
+- Added `Chat.lastMessageAt` so "recency" can be accurate
 - Implemented **message.list** and **message.create** tRPC procedures with authorization
 - Built the first real **chat UI** with routing, sidebar, chat view, and message composer
 
@@ -239,7 +181,6 @@ pnpm dev
 
 We now have everything we need for a chatbot except the chatbot.
 
-In Part 8, we’ll connect to OpenRouter through the Vercel AI SDK and stream assistant responses back to the web app using Server-Sent Events (SSE), so the user can see the answer as it’s being generated.
+In Part 8, we'll connect to OpenRouter through the Vercel AI SDK and stream assistant responses back to the web app using Server-Sent Events (SSE), so the user can see the answer as it's being generated.
 
-> **Repository State**: The current state of the codebase described in this article is available in the [`feat/message-persistence-chat-ui`](https://github.com/Sneyder2328/ai-chatbot/tree/feat/message-persistence-chat-ui) branch on GitHub.
-
+> **Repository State**: The current state of the codebase described in this article is available in the [`feat/add-messages`](https://github.com/Sneyder2328/ai-chatbot/tree/feat/add-messages) branch on GitHub.
