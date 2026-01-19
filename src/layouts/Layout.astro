@@ -2,7 +2,6 @@
 import '../styles/global.css';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
-import Analytics from '@vercel/analytics/astro'
 import SpeedInsights from '@vercel/speed-insights/astro'
 interface Props {
   title: string;
@@ -47,7 +46,14 @@ const ogImage = image ? `${siteUrl}${image}` : undefined;
         font-family: 'JetBrains Mono', monospace;
       }
     </style>
-    <Analytics />
+    {import.meta.env.PROD && (
+      <script
+        defer
+        src="https://analytics.sneyderangulo.com/script.js"
+        data-website-id="4eefa8fa-7232-45ab-ac30-76fa65e7b936"
+        data-domains="blog.sneyderangulo.com"
+      ></script>
+    )}
     <SpeedInsights />
   </head>
   <body class="flex min-h-screen flex-col bg-[var(--color-bg)] text-[var(--color-text)]">

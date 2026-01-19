@@ -3,6 +3,8 @@ import { getCollection, render } from 'astro:content';
 import Layout from '../../layouts/Layout.astro';
 import { calculateReadingTime, formatReadingTime } from '../../utils/readingTime';
 import Giscus from '../../components/Giscus';
+import UmamiPostTracker from '../../components/UmamiPostTracker';
+import ShareButton from '../../components/ShareButton';
 
 export async function getStaticPaths() {
   const posts = await getCollection('blog');
@@ -22,6 +24,7 @@ const formattedDate = post.data.pubDate.toLocaleDateString('en-US', {
 });
 
 const readingTime = calculateReadingTime(post.body || '');
+const canonicalUrl = `https://blog.sneyderangulo.com/blog/${post.slug}`;
 
 // Giscus configuration
 // To set up Giscus for your repo:
@@ -37,6 +40,12 @@ const giscusConfig = {
 ---
 
 <Layout title={post.data.title} description={post.data.description} image={post.data.heroImage}>
+  <UmamiPostTracker
+    client:load
+    slug={post.slug}
+    tags={post.data.tags}
+    readingTimeMinutes={readingTime}
+  />
   <div class="mx-auto max-w-4xl px-6 py-12">
     {post.data.heroImage && (
       <img
@@ -64,6 +73,14 @@ const giscusConfig = {
             </span>
           ))}
         </div>
+        <span>•</span>
+        <ShareButton
+          client:load
+          slug={post.slug}
+          url={canonicalUrl}
+          title={post.data.title}
+          description={post.data.description}
+        />
       </div>
       <h1 class="text-4xl font-bold leading-tight tracking-tight text-white sm:text-5xl">
         {post.data.title}
