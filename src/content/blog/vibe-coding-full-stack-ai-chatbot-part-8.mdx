@@ -1,0 +1,259 @@
+---
+title: "Vibe Coding a Full-Stack AI Chatbot Platform (Part 8): Streaming LLM Responses (OpenRouter + Vercel AI SDK) + Sidebar Power Features"
+description: "Wire OpenRouter via the Vercel AI SDK, stream assistant tokens to the UI with SSE, and upgrade the conversations sidebar with pinning, deletion, sorting, and collapse."
+pubDate: 2026-02-13
+tags:
+  [
+    "tutorial",
+    "ai",
+    "chatbot",
+    "llm",
+    "full-stack",
+    "cursor",
+    "typescript",
+    "react",
+    "vite",
+    "nestjs",
+    "trpc",
+    "prisma",
+    "postgresql",
+    "openrouter",
+    "vercel-ai-sdk",
+    "sse",
+    "streaming",
+  ]
+heroImage: "/images/vibe-coding-full-stack-ai-chatbot-part-8-hero-image.jpg"
+---
+
+This is Part 8 of the tutorial series. If you haven't read the earlier parts, start with [Part 1: Introduction](https://blog.sneyderangulo.com/blog/vibe-coding-full-stack-ai-chatbot-part-1). The previous part is [Part 7: Message Persistence & Chat UI](https://blog.sneyderangulo.com/blog/vibe-coding-full-stack-ai-chatbot-part-7).
+
+In Part 7, we built the core chat experience: message persistence and a real chat UI.
+
+Now it's time for the thing everyone actually cares about: turning our app into a real chatbot by connecting an LLM provider and streaming responses back to the UI.
+
+While we're at it, we're going to make the conversations sidebar significantly more usable with pinning, deletion, sorting, and a collapsible layout for a cleaner UX.
+
+## Goal for this part
+
+By the end of Part 8 we'll have:
+
+- A working LLM integration in `apps/api` using the **Vercel AI SDK**
+- **OpenRouter** as the initial provider (with a clean path to add more providers later)
+- **Streaming assistant responses** to the frontend using **Server-Sent Events (SSE)** so users see the answer as it's generated
+- Conversations sidebar upgrades:
+  - create a new conversation
+  - view conversations in a left sidebar
+  - **pin** conversations
+  - **delete** conversations
+  - sort by pinned-first and then by last activity
+  - collapse/expand the sidebar
+
+---
+
+## The prompt
+
+As in Parts 6–7, I'm now using a single comprehensive prompt with GPT 5.2 extra high reasoning for each feature. Here's the prompt I used to implement streaming with OpenRouter + the sidebar improvements in one pass:
+
+> I want to turn my full-stack chat app into a real AI chatbot with streaming responses, and also upgrade the conversations sidebar UX.
+>
+> Context about the repo:
+> - Monorepo with `apps/api` (NestJS + Better Auth + tRPC) and `apps/web` (React + TanStack Query + TanStack Router).
+> - Prisma client lives in `packages/db`, and we already have `User`, `Chat`, and `Message` models.
+> - `Chat` already has `lastMessageAt`.
+> - Auth is cookie-based via Better Auth, CORS is enabled with `credentials: true`.
+>
+> Requirements:
+>
+> **1. Vercel AI SDK + OpenRouter provider**
+> - In `apps/api`, add the Vercel AI SDK and configure it to call OpenRouter.
+> - Add env vars to the API and validate them using our existing zod env module:
+>   - `OPENROUTER_API_KEY` (required)
+>   - Optional: `OPENROUTER_BASE_URL` defaulting to `https://openrouter.ai/api/v1`
+>   - Optional: `OPENROUTER_APP_NAME` and `OPENROUTER_APP_URL` (used as headers for OpenRouter attribution)
+> - Create an internal AI layer at `apps/api/src/ai/` that is extensible for multiple providers:
+>   - Define `AiProviderId` and `AiModelId` types
+>   - Maintain a small curated model catalog for now (a few chat-capable models) with basic capabilities (supportsVision, supportsImageGen)
+>   - Implement OpenRouter as the first provider using the Vercel AI SDK provider factory and the OpenRouter base URL
+>
+> **2. Database updates to support streaming + sidebar features**
+> - Update Prisma schema to support:
+>   - Chat pinning and deletion:
+>     - `Chat.pinnedAt` nullable timestamptz (`pinned_at`)
+>     - `Chat.deletedAt` nullable timestamptz (`deleted_at`)
+>   - Message generation metadata (minimal but enough for streaming + retry later):
+>     - `Message.providerId` (string, nullable, mapped)
+>     - `Message.modelId` (string, nullable, mapped)
+>     - `Message.status` for assistant messages (`queued | streaming | completed | failed`), stored as an enum
+>     - `Message.errorMessage` nullable string for failures
+> - Add appropriate indexes for sorting and filtering per user (pinned/last activity/deleted).
+> - Follow my Prisma conventions (UUIDv7 for IDs, timestamptz, snake_case mapping).
+>
+> **3. API: streaming assistant responses with SSE**
+> - Implement an authenticated SSE endpoint in `apps/api` (Nest controller) that streams assistant text deltas to the client.
+> - The endpoint must:
+>   - Require authentication (cookie session)
+>   - Accept a `chatId`, a `userMessageId`, and the desired provider/model (provider defaults to openrouter)
+>   - Load the chat messages from the database as context (simple: last N messages)
+>   - Create an assistant message placeholder row in DB (`role=assistant`, `status=streaming`) before streaming
+>   - Stream text deltas as SSE events (`event: delta`, `data: ...`)
+>   - Persist the assistant message content as it streams (buffered updates are OK; avoid writing on every character)
+>   - On completion: set `status=completed`, update `Chat.lastMessageAt`, and send a final SSE `done` event with the final assistant message payload
+>   - On error: set `status=failed`, set `errorMessage`, and send an SSE `error` event
+> - Make sure correct SSE headers are set (content-type, no-cache, keep-alive), and avoid response buffering.
+>
+> **4. API: tRPC procedures for sidebar operations + message sending**
+> - Update existing chat procedures and add new ones:
+>   - `chat.list` should return non-deleted chats only, and sort:
+>     - pinned chats first (pinnedAt desc)
+>     - then lastMessageAt desc (nulls last)
+>     - then updatedAt desc
+>   - Add `chat.pin`, `chat.unpin`, and `chat.delete` (soft delete)
+> - Add a procedure to create user messages (if not already present) and update `Chat.lastMessageAt`.
+> - Return timestamps as ISO strings like the rest of the API.
+>
+> **5. Web: streaming UI + model selection**
+> - Update the web app to support sending a message and streaming the assistant response:
+>   - Add a provider/model selector UI in the composer (provider list can start with only OpenRouter)
+>   - When the user sends a message:
+>     - Create the user message via tRPC
+>     - Start streaming by opening an EventSource connection to the SSE endpoint (use `withCredentials: true` so cookies work cross-origin)
+>     - Render the assistant message as it streams (append deltas to the last assistant bubble)
+>     - On completion, invalidate queries so persisted messages are consistent
+> - Handle disconnects and errors gracefully (show an error bubble if needed).
+>
+> **6. Web: sidebar power features**
+> - Update the sidebar to:
+>   - Sort pinned chats first and then by most recent activity
+>   - Support pin/unpin and delete actions (context menu or inline buttons is fine)
+>   - Be collapsible (small icon button toggles collapsed state)
+> - Keep styling consistent with existing Tailwind + shadcn-style components.
+>
+> Finally:
+> - Update docs/env examples as needed.
+> - Run `pnpm lint:fix`, `pnpm lint`, and `pnpm type-check`.
+
+Model: GPT-5.2 (extra high reasoning)
+
+## What the AI implemented
+
+The AI successfully implemented all the requirements in a single pass. High-level summary:
+
+**AI Provider Layer:**
+- Added Vercel AI SDK dependencies and created `apps/api/src/ai/` module
+- Implemented OpenRouter as a provider via an OpenAI-compatible base URL
+- Added a minimal model catalog so the frontend can present a curated list instead of an unbounded dropdown
+
+**Database updates:**
+- Added `Chat.pinnedAt` and `Chat.deletedAt` for pinning/soft delete
+- Added message generation metadata: `providerId`, `modelId`, `status`, and `errorMessage`
+- Added indexes to support efficient “pinned-first, recent-first” queries per user
+
+**SSE streaming endpoint (NestJS):**
+- Added an authenticated streaming endpoint that:
+  - loads chat context from DB
+  - creates an assistant message placeholder
+  - streams deltas as SSE events
+  - persists assistant content during streaming (buffered)
+  - finalizes status and timestamps on completion
+
+**tRPC changes:**
+- Updated `chat.list` sorting and filtering to match the sidebar UX:
+  - pinned first
+  - then last activity
+  - excludes deleted chats
+- Added `chat.pin`, `chat.unpin`, and `chat.delete` procedures
+
+**Web streaming UX:**
+- Added provider/model selectors in the composer
+- Implemented EventSource-based streaming to render assistant text as it generates
+- Ensured `withCredentials: true` is used so Better Auth cookies work across `localhost:5173` → `localhost:3000`
+
+**Sidebar UX:**
+- Added pin/unpin and delete actions
+- Added collapsed state toggle
+- Updated list rendering to highlight pinned conversations and keep sorting consistent with API
+
+---
+
+## Environment variables
+
+Add these to `apps/api/.env` (and/or your hosting provider env settings):
+
+```env
+OPENROUTER_API_KEY="..."
+
+# Optional
+OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"
+OPENROUTER_APP_NAME="Ask Cosmos"
+OPENROUTER_APP_URL="http://localhost:5173"
+```
+
+If you're running locally, you should already have:
+
+- `DATABASE_URL`
+- `BETTER_AUTH_SECRET`
+- `CLIENT_URL`
+- optional Google OAuth vars
+
+---
+
+## Testing checklist
+
+1. Start the database:
+
+```bash
+docker compose up -d
+```
+
+2. Apply migrations and regenerate Prisma client:
+
+```bash
+pnpm db:migrate
+pnpm db:generate
+```
+
+3. Start the apps:
+
+```bash
+pnpm dev
+```
+
+4. In the browser (`http://localhost:5173`):
+
+- Sign in
+- Create a new chat
+- Send a message and confirm:
+  - the assistant response **streams** progressively (not only at the end)
+  - refreshing the page still shows the full assistant response (persistence)
+- Pin a conversation and confirm it stays at the top
+- Delete a conversation and confirm it disappears from the list
+- Collapse and expand the sidebar
+
+---
+
+## What we've accomplished
+
+- Connected the backend to **OpenRouter** through the **Vercel AI SDK**
+- Implemented **SSE streaming** so the web UI can render assistant responses as they generate
+- Persisted assistant messages in Postgres while streaming
+- Upgraded the conversations sidebar with:
+  - pin/unpin
+  - delete (soft delete)
+  - pinned-first + recent-first sorting
+  - collapse/expand UI
+
+---
+
+## Next steps
+
+We now have the core streaming chatbot experience working.
+
+Next we’ll focus on the “power user” features that differentiate this product from simpler chat UIs:
+
+- Branching from a message (fork a conversation)
+- Retry assistant generations (including switching models)
+- Attach images to messages for vision-capable models
+- Speech-to-text input
+
+> **Repository State**: The current state of the codebase described in this article is available in the [`feat/streaming-and-sidebar`](https://github.com/Sneyder2328/ai-chatbot/tree/feat/streaming-and-sidebar) branch on GitHub.
+
