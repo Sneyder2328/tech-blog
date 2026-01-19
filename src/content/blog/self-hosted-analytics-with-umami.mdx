@@ -3,12 +3,13 @@ title: "Own Your Website Data: Build a Custom Analytics Dashboard with Umami"
 description: "A step-by-step guide to setting up Umami, an open-source analytics platform, on your own VPS with Nginx, TLS certificates, and React integration."
 pubDate: 2026-01-19
 tags: ["analytics", "self-hosted", "umami", "nginx", "devops", "privacy", "react", "tutorial"]
+heroImage: "/images/self-hosted-analytics-with-umami-hero-image.jpg"
 ---
 
 Hey there, on this post I'll be sharing how to set up a custom analytics dashboard with Umami on your own VPS.
 
 
-So here's the deal: I'm currently building web apps and servers on a small $5/month VPS—mostly by leveraging AI. Some of these projects are actually getting real users, so naturally I wanted analytics for them. In past mobile projects, I've used Google Analytics, which is easy to set up and feature-rich, but this time I wanted something different:
+Let's start with some background on why I'm doing this: I'm currently building web apps and servers on a small $5/month VPS—mostly by leveraging AI. Some of these projects are actually getting real users, so naturally I wanted analytics for them. In past mobile projects, I've used Google Analytics, which is easy to set up and feature-rich, but this time I wanted something different:
 
 - **Self-hosted** (no third-party data pipeline, no vendor lock-in)
 - **Privacy-friendly** by default (GDPR compliant)
@@ -18,7 +19,7 @@ In theory, I *could* build an analytics platform from scratch (and with today's 
 
 So I looked at popular open-source options like **Plausible**, **PostHog**, and **Umami**, which all seem to be pretty good and very popular on github. **Umami** stood out for me for its simplicity and because it's built with technologies I'm already comfortable with (**Next.js**, **Prisma**, **PostgreSQL**, **TypeScript**). That makes it easy to customize later if needed so I went with it.
 
-If you want the same setup, here's a detailed guide on how to set it up.
+I figured someone else might want to do the same, so here's a detailed guide on how to set it up.
 
 ---
 
