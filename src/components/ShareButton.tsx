@@ -31,26 +31,31 @@ export default function ShareButton({ slug, url, title, description }: ShareButt
     const canNativeShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
 
     if (canNativeShare) {
-      trackShareClick(slug, 'native');
       try {
         await navigator.share({
           title,
           text: description,
           url,
         });
+        trackShareClick(slug, 'native');
         setStatus('shared');
         return;
-      } catch {
-        // Fall through to copy link
+      } catch (err) {
+        // If the user cancels the share dialog, do nothing.
+        if (err && typeof err === 'object' && 'name' in err && (err as any).name === 'AbortError') {
+          return;
+        }
+        // Otherwise, fall through to copy link.
       }
     }
 
-    trackShareClick(slug, 'copy');
     try {
       await navigator.clipboard.writeText(url);
+      trackShareClick(slug, 'copy');
       setStatus('copied');
     } catch {
       window.prompt('Copy this link:', url);
+      trackShareClick(slug, 'copy');
       setStatus('copied');
     }
   };
@@ -59,7 +64,7 @@ export default function ShareButton({ slug, url, title, description }: ShareButt
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex items-center gap-2 rounded-full border border-border bg-bg-tertiary px-3 py-1 text-xs font-medium text-[var(--color-text-muted)] transition-colors hover:border-[var(--color-accent)] hover:text-white"
+      className="inline-flex items-center gap-2 rounded-full border border-border bg-bg-tertiary px-3 py-1 text-xs font-medium text-text-muted transition-colors hover:border-accent hover:text-white"
       aria-label="Share this post"
       title="Share this post"
     >
