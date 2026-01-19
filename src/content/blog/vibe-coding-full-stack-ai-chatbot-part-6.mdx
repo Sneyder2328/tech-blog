@@ -1,7 +1,7 @@
 ---
 title: "Vibe Coding a Full-Stack AI Chatbot Platform (Part 6): End-to-End Type Safety with tRPC"
 description: "Define tRPC routers inside NestJS, export AppRouter types, and consume them from React with TanStack Query."
-pubDate: 2026-01-30
+pubDate: 2026-01-19
 tags: ["tutorial", "ai", "chatbot", "llm", "full-stack", "cursor", "typescript", "react", "nestjs", "trpc", "tanstack-query", "zod", "better-auth"]
 heroImage: "/images/vibe-coding-full-stack-ai-chatbot-part-6-hero-image.jpg"
 ---
@@ -14,15 +14,13 @@ As discussed in Part 2, tRPC is the perfect tool to help us achieve our goal of 
 
 ## A shift in prompting strategy
 
-Up until now, I've been breaking down each feature into multiple smaller prompts and steps. This approach worked well for demonstrating the thought process and making it easier to follow along.
+Up until now, I've been breaking down each feature into multiple smaller prompts and steps. This approach worked well for demonstrating the thought process and making it easier to follow along. It also not long ago happened to be the recommended approach for vibe coding with AI since its easier for models to handle smaller tasks and steps at a time.
 
-However, I've noticed that **GPT 5.2 with extra high reasoning** has become remarkably precise, even when given large context windows and complex multi-part instructions. The model handles comprehensive prompts exceptionally well, maintaining coherence across all requirements without losing track of details.
-
-**From this part onwards, I'll be using single, detailed prompts** that describe the entire feature we want to build. This approach:
-- Better reflects how I actually work with these models now
+However, I've noticed the model **GPT 5.2 with extra high reasoning** to be reliable, even when given complex multi-part instructions. So from this part onwards, I'll be using single, detailed prompts that describe an entire feature or use case we want to build. This approach:
+- Better leverages the model's high reasoning capabilities
 - Reduces back-and-forth iterations
-- Lets the AI see the full picture and make better architectural decisions
-- Takes advantage of the model's high reasoning capabilities
+- Lets the AI see the full picture and create a more cohesive and complete implementation
+- The tasks are still small enough to be manageable for the model and also for code review and adjustments.
 
 Let's see this in action with our tRPC setup.
 
@@ -141,12 +139,10 @@ Run `pnpm dev`
 
 ## Code Quality Standards
 
-To maintain consistent code quality and development practices across the codebase, I've added Cursor Rules that enforce our standards:
+To maintain consistent code quality and development practices across the codebase, I added the following Cursor Rules to enforce our standards:
 
 - **Quality Checks** (`.cursor/rules/quality-checks.mdc`): Defines required checks that must run after any code changes, including formatting, linting, and TypeScript type checking
 - **Prisma Schema Conventions** (`.cursor/rules/prisma-schema-conventions.mdc`): Ensures consistent Prisma schema patterns, including UUIDv7 IDs, PostgreSQL timestamptz types, and proper snake_case mapping
-
-These rules help maintain the high-quality, maintainable code standards I've established throughout the tutorial series so that the codebase is consistent and easy to maintain.
 
 I also asked the AI to do a code review of the codebase, fixed minor issues it found and also did:
 - Add validation to env variables with zod in the `@ai-chatbot/api` package.
@@ -167,4 +163,4 @@ In Part 7, we'll build the core chat experience:
 
 Then we can finally plug in an LLM provider and start streaming responses.
 
-> **Repository State**: The current state of the codebase described in this article is available in the [`feat/trpc-setup`](https://github.com/Sneyder2328/ai-chatbot/tree/feat/trpc-setup) branch on GitHub.
+> **Repository State**: The current state of the codebase described in this article is available in the <a href="https://github.com/Sneyder2328/ai-chatbot/tree/feat/trpc-setup" target="_blank" rel="noopener noreferrer">feat/trpc-setup</a> branch on GitHub.
