@@ -1,0 +1,166 @@
+---
+title: "Vibe Coding a Full-Stack AI Chatbot Platform (Part 6): End-to-End Type Safety with tRPC"
+description: "Define tRPC routers inside NestJS, export AppRouter types, and consume them from React with TanStack Query."
+pubDate: 2026-01-19
+tags: ["tutorial", "ai", "chatbot", "llm", "full-stack", "cursor", "typescript", "react", "nestjs", "trpc", "tanstack-query", "zod", "better-auth"]
+heroImage: "/images/vibe-coding-full-stack-ai-chatbot-part-6-hero-image.jpg"
+---
+
+This is Part 6 of the tutorial series. If you haven't read the earlier parts, you can start with [Part 1: Introduction](https://blog.sneyderangulo.com/blog/vibe-coding-full-stack-ai-chatbot-part-1), or read the previous part [Part 5: Authentication with Better Auth](https://blog.sneyderangulo.com/blog/vibe-coding-full-stack-ai-chatbot-part-5).
+
+In Part 5, we set up authentication with Better Auth (email/password + Google OAuth). Now we need the wire that will allow our React frontend to call the NestJS backend and get the data we need.
+
+As discussed in Part 2, tRPC is the perfect tool to help us achieve our goal of having end-to-end type safety between our React frontend and NestJS backend.
+
+## A shift in prompting strategy
+
+Up until now, I've been breaking down each feature into multiple smaller prompts and steps. This approach worked well for demonstrating the thought process and making it easier to follow along. It also not long ago happened to be the recommended approach for vibe coding with AI since its easier for models to handle smaller tasks and steps at a time.
+
+However, I've noticed the model **GPT 5.2 with extra high reasoning** to be reliable, even when given complex multi-part instructions. So from this part onwards, I'll be using single, detailed prompts that describe an entire feature or use case we want to build. This approach:
+- Better leverages the model's high reasoning capabilities
+- Reduces back-and-forth iterations
+- Lets the AI see the full picture and create a more cohesive and complete implementation
+- The tasks are still small enough to be manageable for the model and also for code review and adjustments.
+
+Let's see this in action with our tRPC setup.
+
+## Goal for this part
+
+By the end of this part we'll have:
+
+- tRPC **routers and procedures defined in `apps/api`** (Nest owns the API surface)
+- A small shared `@ai-chatbot/trpc` **helpers package** (router + public/protected procedures)
+- `AppRouter` **types exported to the frontend** (via `@ai-chatbot/api/trpc`)
+- A `/api/trpc` endpoint mounted in **NestJS**
+- A tRPC client wired into **React + TanStack Query**
+- Our first **protected procedures**: `chat.create` and `chat.list` (backed by Prisma)
+
+---
+
+## The prompt
+
+Here's the single comprehensive prompt I used to implement the entire tRPC setup:
+
+> I want to add end-to-end type-safe API communication between my React frontend and NestJS backend using tRPC. Here's everything I need:
+>
+> **1. Prisma Schema Update**
+> Update my Prisma schema to add a `Chat` model:
+> - Use UUIDv7 for chat IDs
+> - Follow my mapping conventions (`@@map` for snake_case table names, `@map` for column names)
+> - Use PostgreSQL `timestamptz` (`@db.Timestamptz`) for timestamps
+> - Chat belongs to a User (one user has many chats)
+> - Add an index on `user_id`
+> - Keep it minimal: id, userId, title, createdAt, updatedAt
+>
+> **2. Shared tRPC Helpers Package**
+> Create a new buildable workspace package at `packages/trpc` called `@ai-chatbot/trpc`:
+> - Compile to `dist/` (CommonJS, consistent with our other backend packages)
+> - Export `router`, `publicProcedure`, and `protectedProcedure`
+> - Export `TrpcContext` and `ProtectedContext` types
+> - `protectedProcedure` must throw `UNAUTHORIZED` if there is no authenticated user in context
+> - Define `AuthUser`, `TrpcContext`, and `ProtectedContext` types for the context (containing `db` and `user` instances)
+>
+> **3. NestJS Router Setup**
+> In `apps/api`, create a tRPC router with:
+> - `chat.create` and `chat.list` as protected procedures (Prisma-backed)
+> - A `createContext` that injects `db` (Prisma client) and resolves `user` from Better Auth cookies
+> - Mount tRPC at `/api/trpc` in `main.ts` using `createExpressMiddleware`
+> - Export `AppRouter` types from the API package so the web app can import them via `@ai-chatbot/api/trpc`
+>
+> **4. React Client Setup**
+> In `apps/web`, set up tRPC + TanStack Query:
+> - Add `@ai-chatbot/api` as a workspace devDependency (so TS can import `AppRouter`)
+> - Create a `trpc` helper typed with `AppRouter` from `@ai-chatbot/api/trpc`
+> - Create a QueryClient
+> - Use `httpBatchLink` pointing at `${VITE_API_URL}/api/trpc`
+> - Ensure cookies are included (`credentials: "include"`)
+> - Wrap the app in providers in `main.tsx`
+>
+> **5. UI Component**
+> Create a `ChatsPanel` component that:
+> - Calls `trpc.chat.list.useQuery()` to list chats
+> - Calls `trpc.chat.create.useMutation()` to create new chats
+> - Invalidates `chat.list` on successful creation
+> - Shows loading and error states
+> - Uses the existing `Button` styling
+> - Plug it into the authenticated branch of `App.tsx`
+
+Model: GPT-5.2 (extra high reasoning)
+
+## What the AI implemented
+
+The AI successfully implemented all five parts in a single pass:
+
+**Prisma Schema:**
+- Added a `Chat` model under `packages/db/prisma/schema.prisma` with all the specified conventions
+
+**Shared tRPC Package (`packages/trpc`):**
+- Created the directory structure with `context.ts`, `trpc.ts`, and `index.ts`
+- Defined `AuthUser`, `TrpcContext`, and `ProtectedContext` types
+- Initialized tRPC and defined `router`, `publicProcedure`, and `protectedProcedure` with auth middleware
+
+**NestJS Router (`apps/api`):**
+- Added chat procedures + app router inside `apps/api/src/trpc`
+- Added a typed `createContext`
+- Mounted `createExpressMiddleware` in `main.ts`
+- Exported `AppRouter` types via `@ai-chatbot/api/trpc`
+
+**React Client (`apps/web`):**
+- Added `src/lib/trpc.ts`
+- Updated `src/main.tsx` to include QueryClientProvider + trpc.Provider
+
+**UI Component:**
+- Implemented `ChatsPanel` component to list chats and create new ones using tRPC hooks
+
+At this point we should be able to:
+- Log in / Sign up
+- Once logged in, see an empty chat list
+- Create a chat
+- See it appear immediately in the list
+
+---
+
+## Testing checklist
+
+1. Start the database:
+
+Run `docker compose up -d`
+
+2. Start apps:
+
+Run `pnpm dev`
+
+3. In the browser:
+- Sign in
+- Click "New chat"
+- Refresh the page (list should still show, because data is persisted)
+
+---
+
+## Code Quality Standards
+
+To maintain consistent code quality and development practices across the codebase, I added the following Cursor Rules to enforce our standards:
+
+- **Quality Checks** (`.cursor/rules/quality-checks.mdc`): Defines required checks that must run after any code changes, including formatting, linting, and TypeScript type checking
+- **Prisma Schema Conventions** (`.cursor/rules/prisma-schema-conventions.mdc`): Ensures consistent Prisma schema patterns, including UUIDv7 IDs, PostgreSQL timestamptz types, and proper snake_case mapping
+
+I also asked the AI to do a code review of the codebase, fixed minor issues it found and also did:
+- Add validation to env variables with zod in the `@ai-chatbot/api` package.
+- Add basic rate limiting to the `/api/auth` and `/api/trpc` endpoints with `express-rate-limit`.
+- Improve CORS configuration in the `@ai-chatbot/api` package.
+- Add helmet to the `@ai-chatbot/api` package with a basic configuration.
+
+---
+
+## Next steps
+
+We can create chats, but we still don't have an actual "chatbot".
+
+In Part 7, we'll build the core chat experience:
+- Message model + persistence
+- A chat page UI
+- Sending a message to the backend and saving it
+
+Then we can finally plug in an LLM provider and start streaming responses.
+
+> **Repository State**: The current state of the codebase described in this article is available in the <a href="https://github.com/Sneyder2328/ai-chatbot/tree/feat/trpc-setup" target="_blank" rel="noopener noreferrer">feat/trpc-setup</a> branch on GitHub.
