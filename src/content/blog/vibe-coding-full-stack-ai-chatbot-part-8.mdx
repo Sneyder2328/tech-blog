@@ -136,7 +136,7 @@ Model: GPT-5.2 (extra high reasoning)
 
 ## What the AI implemented
 
-The AI successfully implemented all the requirements in a single pass. High-level summary:
+The AI successfully most of the requirements in a single pass. I still had to make some adjustments to the code to make it work, so next time I'll use a bit smaller prompts or maybe more detailed so the process is smoother. High-level summary:
 
 **AI Provider Layer:**
 - Added Vercel AI SDK dependencies and created `apps/api/src/ai/` module
@@ -180,12 +180,12 @@ The AI successfully implemented all the requirements in a single pass. High-leve
 Add these to `apps/api/.env` (and/or your hosting provider env settings):
 
 ```env
-OPENROUTER_API_KEY="..."
+OPENROUTER_API_KEY=your-openrouter-api-key
 
 # Optional
 OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"
-OPENROUTER_APP_NAME="Ask Cosmos"
-OPENROUTER_APP_URL="http://localhost:5173"
+OPENROUTER_APP_NAME=your-app-name
+OPENROUTER_APP_URL=your-app-url
 ```
 
 If you're running locally, you should already have:
